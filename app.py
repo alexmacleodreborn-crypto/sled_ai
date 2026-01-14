@@ -85,12 +85,8 @@ with st.spinner("Fetching TESS photon data…"):
 # ==================================================
 # SAFE conversion: Astropy → NumPy → DataFrame
 # ==================================================
-try:
-    t = np.asarray(lc.time.value, dtype=np.float64)
-    x = np.asarray(lc.flux.value, dtype=np.float64)
-except Exception as e:
-    st.error(f"Data conversion failed: {e}")
-    st.stop()
+t = np.asarray(lc.time.value, dtype=np.float64)
+x = np.asarray(lc.flux.value, dtype=np.float64)
 
 mask = np.isfinite(t) & np.isfinite(x)
 df = pd.DataFrame({
@@ -159,30 +155,48 @@ overlay["Release"] = results["x"].where(results["Release"])
 st.line_chart(overlay, height=320)
 
 # ==================================================
-# Sandy’s Square — Σ vs Z
+# Sandy’s Square — Σ vs Z with trajectory
 # ==================================================
 st.subheader("Sandy’s Square (Σ vs Z)")
 
-square_df = results[["Z", "Sigma", "Regime", "Phase0", "Release"]].dropna()
+square_df = results[["Z", "Sigma", "Regime", "Phase0", "Release"]].dropna().reset_index(drop=True)
 
 color_map = {
     "Trapped": "#1f77b4",
     "Transitional": "#ff7f0e",
     "Escaping": "#2ca02c",
 }
-
 colors = square_df["Regime"].map(color_map).fillna("#7f7f7f")
 
-fig, ax = plt.subplots(figsize=(7, 7))
+fig, ax = plt.subplots(figsize=(7.5, 7.5))
 
 ax.scatter(
     square_df["Z"],
     square_df["Sigma"],
     c=colors,
     s=6,
-    alpha=0.35,
+    alpha=0.30,
     linewidths=0
 )
+
+# Trajectory arrows (adaptive subsampling)
+step = max(len(square_df) // 300, 1)
+Zs = square_df["Z"].values
+Ss = square_df["Sigma"].values
+
+for i in range(0, len(square_df) - step, step):
+    ax.arrow(
+        Zs[i],
+        Ss[i],
+        Zs[i + step] - Zs[i],
+        Ss[i + step] - Ss[i],
+        length_includes_head=True,
+        head_width=0.008,
+        head_length=0.015,
+        fc="black",
+        ec="black",
+        alpha=0.25
+    )
 
 # Phase-0 markers
 p0 = square_df[square_df["Phase0"]]
@@ -202,7 +216,7 @@ ax.scatter(
     rel["Z"],
     rel["Sigma"],
     c="red",
-    s=18,
+    s=22,
     marker="x",
     label="Release"
 )
@@ -228,124 +242,12 @@ st.download_button(
     "Download full Sandy’s Square results (CSV)",
     data=results.to_csv(index=False),
     file_name=f"{target.replace(' ','_')}_sandys_square_tess.csv",
-    mime="text/csv"
+    mime="text/csv",
+    key="square_csv_download"
 )
 
 st.caption(
     "Real TESS photon data processed through Sandy’s Square. "
     "Σ = information density, Z = trapping/constraint, "
-    "G = escape gate, Phase-0 = trapped precursor."
-)
-# Fetch TESS light curve
-# ==================================================
-with st.spinner("Fetching TESS photon data…"):
-    try:
-        search = lk.search_lightcurve(
-            target,
-            mission="TESS",
-            cadence=cadence
-        )
-
-        if len(search) == 0:
-            st.error("No TESS light curve found for this target.")
-            st.stop()
-
-        lc = search.download().PDCSAP_FLUX
-
-    except Exception as e:
-        st.error(f"TESS fetch failed: {e}")
-        st.stop()
-
-# ==================================================
-# SAFE conversion: Astropy → NumPy → DataFrame
-# ==================================================
-try:
-    t = np.asarray(lc.time.value, dtype=np.float64)
-    x = np.asarray(lc.flux.value, dtype=np.float64)
-except Exception as e:
-    st.error(f"Data conversion failed: {e}")
-    st.stop()
-
-mask = np.isfinite(t) & np.isfinite(x)
-df = pd.DataFrame({
-    "t": t[mask],
-    "x": x[mask]
-}).reset_index(drop=True)
-
-if df.empty:
-    st.error("All data points were invalid after cleaning.")
-    st.stop()
-
-if len(df) < win + slope_win + 5:
-    st.warning(
-        f"Only {len(df)} data points available. "
-        f"Reduce window sizes for stable results."
-    )
-
-# ==================================================
-# Run Sandy’s Square / SLED
-# ==================================================
-features = compute_sled_features(
-    df,
-    win=win,
-    entropy_bins=entropy_bins
-)
-
-results = sled_detect(
-    features,
-    slope_win=slope_win,
-    z_high=z_high,
-    z_stable_max_std=z_stable,
-    sigma_slope_min=sigma_slope_min,
-    z_drop_min=z_drop_min,
-    g_rise_min=g_rise_min,
-    r_spike_q=r_spike_q,
-)
-
-# ==================================================
-# Summary
-# ==================================================
-st.subheader("Summary")
-
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Data points", len(results))
-c2.metric("Phase-0 count", int(results["Phase0"].sum()))
-c3.metric("Release count", int(results["Release"].sum()))
-c4.metric("Final regime", results["Regime"].iloc[-1])
-
-# ==================================================
-# Visualisations
-# ==================================================
-st.subheader("Photon Signal (TESS Flux)")
-st.line_chart(results["x"], height=260)
-
-st.subheader("Sandy’s Square Core Variables")
-st.line_chart(results[["Sigma", "Z", "G"]], height=320)
-
-st.subheader("Phase Scores")
-st.line_chart(results[["Phase0_score", "Release_score"]], height=260)
-
-st.subheader("Phase Markers Overlay")
-overlay = pd.DataFrame(index=results.index)
-overlay["signal"] = results["x"]
-overlay["Phase-0"] = results["x"].where(results["Phase0"])
-overlay["Release"] = results["x"].where(results["Release"])
-st.line_chart(overlay, height=320)
-
-# ==================================================
-# Export
-# ==================================================
-st.subheader("Export Results")
-
-st.download_button(
-    "Download full Sandy’s Square results (CSV)",
-    data=results.to_csv(index=False),
-    file_name=f"{target.replace(' ','_')}_sandys_square_tess.csv",
-    mime="text/csv"
-)
-
-st.caption(
-    "Real TESS photon data processed through Sandy’s Square. "
-    "Σ = internal information density, Z = trapping/constraint, "
     "G = escape gate, Phase-0 = trapped precursor."
 )
