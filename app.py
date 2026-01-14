@@ -3,50 +3,51 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 # --------------------------------------------------
-# Page config
+# Page configuration
 # --------------------------------------------------
 st.set_page_config(
-    page_title="Sandy’s Law — Persistence (LRD)",
+    page_title="Mag’s Law — Persistence (LRD)",
     layout="wide"
 )
 
-st.title("Sandy’s Law — Persistence (Low-Radiance Domain)")
+st.title("Mag’s Law — Persistence (Low-Radiance Domain)")
 st.caption(
-    "Demonstration of structural persistence using real supernova photometry "
-    "(energy present, observability suppressed)"
+    "A structural principle within Sandy’s Law: "
+    "energy may exist and evolve internally while remaining observationally silent"
 )
 
 # --------------------------------------------------
-# Sidebar navigation (NOT pages)
+# Sidebar navigation (single-file by design)
 # --------------------------------------------------
 view = st.sidebar.radio(
     "View",
     [
-        "Persistence (Low-Radiance Domain)",
-        "Structural State Space (Square)"
+        "Mag’s Law (Persistence / LRD)",
+        "Structural State Space (Sandy’s Square)"
     ]
 )
 
 # --------------------------------------------------
-# Data upload (required)
+# Data upload (required, reproducible)
 # --------------------------------------------------
 st.sidebar.header("Data Input")
 
 uploaded = st.sidebar.file_uploader(
-    "Upload SN B-band CSV (time, mag)",
+    "Upload Supernova B-band CSV (time, mag)",
     type=["csv"]
 )
 
 if uploaded is None:
     st.info(
-        "⬅️ Upload `SN2017cbv_B.csv` to begin.\n\n"
-        "The CSV must contain columns:\n"
-        "`time, mag`"
+        "⬅️ Upload a B-band supernova CSV to begin.\n\n"
+        "Required columns:\n"
+        "- `time` (e.g. MJD)\n"
+        "- `mag` (magnitude)"
     )
     st.stop()
 
 # --------------------------------------------------
-# Read and validate CSV
+# Load and validate CSV
 # --------------------------------------------------
 try:
     df = pd.read_csv(uploaded)
@@ -62,8 +63,103 @@ if not required_cols.issubset(df.columns):
     )
     st.stop()
 
-df = df[["time", "mag"]].dropna()
-df = df.sort_values("time").reset_index(drop=True)
+df = (
+    df[["time", "mag"]]
+    .dropna()
+    .sort_values("time")
+    .reset_index(drop=True)
+)
+
+# --------------------------------------------------
+# VIEW 1 — MAG’S LAW / PERSISTENCE
+# --------------------------------------------------
+if view == "Mag’s Law (Persistence / LRD)":
+
+    st.header("Mag’s Law — Persistence (Low-Radiance Domain)")
+
+    st.markdown(
+        """
+**Mag’s Law (Persistence Law)** describes a regime in which energy exists
+and evolves internally, yet observable radiation remains suppressed due
+to strong structural constraints.
+
+In this regime:
+- Energy ≠ observability
+- Photons exist but remain mass-coupled and trapped
+- Observable information does not accumulate
+
+This regime is referred to as the **Low-Radiance Domain (LRD)**.
+"""
+    )
+
+    # --------------------------------------------------
+    # Light curve plot
+    # --------------------------------------------------
+    fig, ax = plt.subplots(figsize=(9, 4.5))
+
+    ax.plot(
+        df["time"],
+        df["mag"],
+        marker="o",
+        linestyle="-",
+        color="black"
+    )
+
+    ax.invert_yaxis()
+    ax.set_xlabel("Time")
+    ax.set_ylabel("B-band Magnitude")
+    ax.set_title("Supernova B-band Light Curve")
+
+    ax.grid(True, alpha=0.3)
+
+    st.pyplot(fig)
+
+    st.info(
+        "Early times show minimal observable change despite ongoing internal "
+        "energy production. This silent interval is described by **Mag’s Law** "
+        "and corresponds to the **Low-Radiance Domain**."
+    )
+
+    st.markdown(
+        """
+**Key point (Mag’s Law):**  
+A system does not become visible when energy is created.  
+It becomes visible when **structural constraints weaken and photon escape becomes permitted**.
+"""
+    )
+
+# --------------------------------------------------
+# VIEW 2 — SANDY’S SQUARE (LOCKED BY DESIGN)
+# --------------------------------------------------
+else:
+
+    st.header("Structural State Space (Sandy’s Square)")
+
+    st.warning(
+        "Sandy’s Square is intentionally disabled at this stage.\n\n"
+        "Mag’s Law (Persistence) must be established first.\n\n"
+        "Next steps will:\n"
+        "- define observable information density (Σ)\n"
+        "- define structural constraint (Z)\n"
+        "- map Mag’s Law → transition → release"
+    )
+
+    st.markdown(
+        """
+The Square is **not a discovery tool**.  
+It is a **structural map** that becomes meaningful only after
+the Persistence regime is understood.
+"""
+    )
+
+# --------------------------------------------------
+# Footer
+# --------------------------------------------------
+st.divider()
+st.caption(
+    "Mag’s Law — Persistence Demonstration | "
+    "Part of Sandy’s Law | CSV-based • Deterministic • Reproducible"
+)
 
 # --------------------------------------------------
 # VIEW 1 — PERSISTENCE / LRD
