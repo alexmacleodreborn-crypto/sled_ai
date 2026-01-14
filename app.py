@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 
 # --------------------------------------------------
@@ -17,7 +18,7 @@ st.caption(
 )
 
 # --------------------------------------------------
-# Sidebar navigation (single-file by design)
+# Sidebar navigation
 # --------------------------------------------------
 view = st.sidebar.radio(
     "View",
@@ -28,7 +29,7 @@ view = st.sidebar.radio(
 )
 
 # --------------------------------------------------
-# Data upload (required, reproducible)
+# Data upload
 # --------------------------------------------------
 st.sidebar.header("Data Input")
 
@@ -41,8 +42,8 @@ if uploaded is None:
     st.info(
         "⬅️ Upload a B-band supernova CSV to begin.\n\n"
         "Required columns:\n"
-        "- `time` (e.g. MJD)\n"
-        "- `mag` (magnitude)"
+        "- `time`\n"
+        "- `mag`"
     )
     st.stop()
 
@@ -71,6 +72,23 @@ df = (
 )
 
 # --------------------------------------------------
+# Observable Information Σ (event-scaled)
+# --------------------------------------------------
+
+# Convert magnitude to relative flux proxy
+m0 = df["mag"].iloc[0]
+df["flux_proxy"] = 10 ** (-0.4 * (df["mag"] - m0))
+
+# Incremental observable change
+df["delta_flux"] = df["flux_proxy"].diff().abs().fillna(0.0)
+
+# Cumulative observable information
+df["Sigma"] = df["delta_flux"].cumsum()
+
+# Normalised Sigma for plotting
+df["Sigma_norm"] = df["Sigma"] / df["Sigma"].max() if df["Sigma"].max() > 0 else 0
+
+# --------------------------------------------------
 # VIEW 1 — MAG’S LAW / PERSISTENCE
 # --------------------------------------------------
 if view == "Mag’s Law (Persistence / LRD)":
@@ -93,7 +111,7 @@ This regime is referred to as the **Low-Radiance Domain (LRD)**.
     )
 
     # --------------------------------------------------
-    # Light curve plot
+    # Light curve
     # --------------------------------------------------
     fig, ax = plt.subplots(figsize=(9, 4.5))
 
@@ -120,16 +138,57 @@ This regime is referred to as the **Low-Radiance Domain (LRD)**.
         "and corresponds to the **Low-Radiance Domain**."
     )
 
+    # --------------------------------------------------
+    # Observable Information Σ
+    # --------------------------------------------------
+    st.subheader("Observable Information Accumulation (Σ)")
+
+    st.markdown(
+        """
+Σ (Sigma) is a **proxy for observable information**, defined here as the
+cumulative magnitude of observed change in the signal.
+
+This definition is:
+- event-scaled (no sliding windows)
+- robust to sparse, irregular sampling
+- appropriate for supernova light curves
+"""
+    )
+
+    fig2, ax2 = plt.subplots(figsize=(9, 4))
+
+    ax2.plot(
+        df["time"],
+        df["Sigma_norm"],
+        marker="o",
+        linestyle="-",
+        color="tab:blue"
+    )
+
+    ax2.set_xlabel("Time")
+    ax2.set_ylabel("Normalised Σ")
+    ax2.set_title("Cumulative Observable Information (Σ)")
+
+    ax2.grid(True, alpha=0.3)
+
+    st.pyplot(fig2)
+
+    st.success(
+        "During Mag’s Law (Persistence), Σ remains near-flat.\n"
+        "Σ rises rapidly only when structural constraints weaken "
+        "and photon escape becomes permitted."
+    )
+
     st.markdown(
         """
 **Key point (Mag’s Law):**  
 A system does not become visible when energy is created.  
-It becomes visible when **structural constraints weaken and photon escape becomes permitted**.
+It becomes visible when **observable information begins to accumulate**.
 """
     )
 
 # --------------------------------------------------
-# VIEW 2 — SANDY’S SQUARE (LOCKED BY DESIGN)
+# VIEW 2 — SANDY’S SQUARE (STILL LOCKED)
 # --------------------------------------------------
 else:
 
@@ -137,18 +196,18 @@ else:
 
     st.warning(
         "Sandy’s Square is intentionally disabled at this stage.\n\n"
-        "Mag’s Law (Persistence) must be established first.\n\n"
-        "Next steps will:\n"
-        "- define observable information density (Σ)\n"
-        "- define structural constraint (Z)\n"
-        "- map Mag’s Law → transition → release"
+        "Now that Σ (observable information) is defined, the next step will be:\n"
+        "- defining structural constraint (Z)\n"
+        "- mapping (Z, Σ) trajectories\n"
+        "- identifying boundary crossing from Mag’s Law to release"
     )
 
     st.markdown(
         """
-The Square is **not a discovery tool**.  
-It is a **structural map** that becomes meaningful only after
-the Persistence regime is understood.
+The Square is a **map of consequences**, not a discovery engine.
+
+It becomes meaningful only after Mag’s Law (Persistence)
+and observable information (Σ) are established.
 """
     )
 
@@ -159,94 +218,4 @@ st.divider()
 st.caption(
     "Mag’s Law — Persistence Demonstration | "
     "Part of Sandy’s Law | CSV-based • Deterministic • Reproducible"
-)
-
-# --------------------------------------------------
-# VIEW 1 — PERSISTENCE / LRD
-# --------------------------------------------------
-if view == "Persistence (Low-Radiance Domain)":
-
-    st.header("Persistence / Low-Radiance Domain (LRD)")
-
-    st.markdown(
-        """
-**Persistence** is a regime where energy exists and evolves internally,
-but observable radiation remains suppressed due to strong structural
-constraints.
-
-In this regime:
-- Energy ≠ observability
-- Photons exist but are mass-coupled and trapped
-- Observable information does not accumulate
-
-The light curve below shows this directly.
-"""
-    )
-
-    # Plot light curve
-    fig, ax = plt.subplots(figsize=(9, 4.5))
-
-    ax.plot(
-        df["time"],
-        df["mag"],
-        marker="o",
-        linestyle="-",
-        color="black"
-    )
-
-    ax.invert_yaxis()
-    ax.set_xlabel("Time (MJD)")
-    ax.set_ylabel("B-band Magnitude")
-    ax.set_title("SN2017cbv — B-band Light Curve")
-
-    ax.grid(True, alpha=0.3)
-
-    st.pyplot(fig)
-
-    st.info(
-        "Early times show minimal observable change despite ongoing internal "
-        "energy production. This silent interval is the **Persistence / "
-        "Low-Radiance Domain**."
-    )
-
-    st.markdown(
-        """
-**Key point:**  
-The supernova does not become visible when energy is created.  
-It becomes visible when **structural constraints weaken and photon escape becomes permitted**.
-"""
-    )
-
-# --------------------------------------------------
-# VIEW 2 — STRUCTURAL STATE SPACE (LOCKED FOR NOW)
-# --------------------------------------------------
-else:
-
-    st.header("Structural State Space (Sandy’s Square)")
-
-    st.warning(
-        "The Square is intentionally disabled at this stage.\n\n"
-        "Persistence (Low-Radiance Domain) must be established first.\n\n"
-        "Next steps will:\n"
-        "- introduce event-scaled observable information (Σ)\n"
-        "- define structural constraint (Z)\n"
-        "- show boundary crossing as photon release"
-    )
-
-    st.markdown(
-        """
-This ordering is deliberate.
-
-The Square is **not a discovery tool**.  
-It is a **map of consequences** once Persistence is understood.
-"""
-    )
-
-# --------------------------------------------------
-# Footer
-# --------------------------------------------------
-st.divider()
-st.caption(
-    "Sandy’s Law — Persistence Demonstration | "
-    "CSV-based • Deterministic • Reproducible"
 )
