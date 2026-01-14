@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import lightkurve as lk
 
 from sled.features import compute_sled_features
@@ -15,11 +16,11 @@ st.set_page_config(
 
 st.title("Sandy’s Square — TESS Photon Observability")
 st.caption(
-    "Live TESS photon data → Σ–Z Square → Phase-0 → Escape"
+    "Real TESS photon data → Σ–Z Square → Phase-0 → Escape"
 )
 
 # ==================================================
-# Sidebar — TESS controls
+# Sidebar controls
 # ==================================================
 with st.sidebar:
     st.header("TESS Target")
@@ -27,7 +28,7 @@ with st.sidebar:
     target = st.text_input(
         "TIC ID or target name",
         value="TIC 307210830",
-        help="Example: TIC 307210830 (bright, well-sampled)"
+        help="Example: TIC 307210830"
     )
 
     cadence = st.selectbox(
@@ -54,12 +55,15 @@ with st.sidebar:
     run = st.button("Fetch TESS & Run Sandy’s Square")
 
 # ==================================================
-# Fetch TESS data
+# Guard
 # ==================================================
 if not run:
     st.info("⬅️ Enter a TESS target and click **Fetch TESS & Run**")
     st.stop()
 
+# ==================================================
+# Fetch TESS light curve
+# ==================================================
 with st.spinner("Fetching TESS photon data…"):
     try:
         search = lk.search_lightcurve(
@@ -67,27 +71,41 @@ with st.spinner("Fetching TESS photon data…"):
             mission="TESS",
             cadence=cadence
         )
+
         if len(search) == 0:
-            st.error("No TESS data found for this target.")
+            st.error("No TESS light curve found for this target.")
             st.stop()
 
         lc = search.download().PDCSAP_FLUX
+
     except Exception as e:
         st.error(f"TESS fetch failed: {e}")
         st.stop()
 
 # ==================================================
-# Convert to Sandy’s Square format
+# SAFE conversion: Astropy → NumPy → DataFrame
 # ==================================================
+try:
+    t = np.asarray(lc.time.value, dtype=np.float64)
+    x = np.asarray(lc.flux.value, dtype=np.float64)
+except Exception as e:
+    st.error(f"Data conversion failed: {e}")
+    st.stop()
+
+mask = np.isfinite(t) & np.isfinite(x)
 df = pd.DataFrame({
-    "t": lc.time.value,
-    "x": lc.flux.value
-}).dropna().reset_index(drop=True)
+    "t": t[mask],
+    "x": x[mask]
+}).reset_index(drop=True)
+
+if df.empty:
+    st.error("All data points were invalid after cleaning.")
+    st.stop()
 
 if len(df) < win + slope_win + 5:
     st.warning(
-        f"Only {len(df)} points available. "
-        f"Consider reducing the window sizes."
+        f"Only {len(df)} data points available. "
+        f"Reduce window sizes for stable results."
     )
 
 # ==================================================
@@ -122,9 +140,9 @@ c3.metric("Release count", int(results["Release"].sum()))
 c4.metric("Final regime", results["Regime"].iloc[-1])
 
 # ==================================================
-# Plots
+# Visualisations
 # ==================================================
-st.subheader("Photon Signal (TESS flux)")
+st.subheader("Photon Signal (TESS Flux)")
 st.line_chart(results["x"], height=260)
 
 st.subheader("Sandy’s Square Core Variables")
@@ -133,7 +151,7 @@ st.line_chart(results[["Sigma", "Z", "G"]], height=320)
 st.subheader("Phase Scores")
 st.line_chart(results[["Phase0_score", "Release_score"]], height=260)
 
-st.subheader("Square Overlay (Markers)")
+st.subheader("Phase Markers Overlay")
 overlay = pd.DataFrame(index=results.index)
 overlay["signal"] = results["x"]
 overlay["Phase-0"] = results["x"].where(results["Phase0"])
@@ -143,17 +161,17 @@ st.line_chart(overlay, height=320)
 # ==================================================
 # Export
 # ==================================================
-st.subheader("Export")
+st.subheader("Export Results")
 
 st.download_button(
-    "Download full results CSV",
+    "Download full Sandy’s Square results (CSV)",
     data=results.to_csv(index=False),
     file_name=f"{target.replace(' ','_')}_sandys_square_tess.csv",
     mime="text/csv"
 )
 
 st.caption(
-    "This is real TESS photon data processed through Sandy’s Square. "
-    "Σ = internal information density, Z = photon trapping, "
+    "Real TESS photon data processed through Sandy’s Square. "
+    "Σ = internal information density, Z = trapping/constraint, "
     "G = escape gate, Phase-0 = trapped precursor."
 )
