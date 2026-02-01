@@ -3,9 +3,6 @@ from datetime import datetime
 import networkx as nx
 import matplotlib.pyplot as plt
 
-# ==================================================
-# CORE IMPORTS
-# ==================================================
 from sled_core import (
     SLEDEngine,
     safe_history,
@@ -33,7 +30,7 @@ st.set_page_config(
 )
 
 st.title("🧿 SLEDAI — A7DO Manager")
-st.caption("Structure → Information → Constraint → Measurement → Warp")
+st.caption("Structure → Information → Constraint → Measurement → Warp → Genesis")
 
 # ==================================================
 # STATE INITIALISATION
@@ -46,9 +43,6 @@ if "sales_last_scan" not in st.session_state:
 if "inputs_log" not in st.session_state:
     st.session_state.inputs_log = []
 
-# ==================================================
-# ENGINE + UNIVERSE
-# ==================================================
 engine = SLEDEngine()
 
 UNIVERSE = [
@@ -71,15 +65,10 @@ if st.button("RUN FULL SLED + WARP CYCLE (A7DO)", type="primary"):
             continue
 
         dfp = engine.calculate(df)
-        if dfp is None:
-            continue
-
         summary = engine.summarize(dfp)
 
         news = safe_news(ticker)
-        final_action, reason = apply_news_filter(
-            summary["Signal"], news
-        )
+        final_action, reason = apply_news_filter(summary["Signal"], news)
 
         record = {
             "Timestamp": now,
@@ -88,7 +77,6 @@ if st.button("RUN FULL SLED + WARP CYCLE (A7DO)", type="primary"):
             "Final_Action": final_action,
             "Reason": reason,
         }
-
         st.session_state.sales_last_scan.append(record)
 
         log_signal(
@@ -111,7 +99,7 @@ if st.button("RUN FULL SLED + WARP CYCLE (A7DO)", type="primary"):
     update_attribution(st.session_state)
     update_warp_states(st.session_state)
 
-    st.success("Cycle complete — SLED, Ledger, and Warp updated.")
+    st.success("Cycle complete — SLED, Warp, Genesis ready.")
 
 st.divider()
 
@@ -119,165 +107,82 @@ st.divider()
 # LATEST DECISIONS
 # ==================================================
 st.subheader("📈 Latest Market Decisions")
-
-if st.session_state.sales_last_scan:
-    st.dataframe(
-        st.session_state.sales_last_scan,
-        use_container_width=True,
-    )
-else:
-    st.info("No scan results yet. Run the cycle.")
-
-st.divider()
+st.dataframe(st.session_state.sales_last_scan, use_container_width=True)
 
 # ==================================================
-# WHY WAIT? DIAGNOSTICS (NEW)
+# WHY WAIT
 # ==================================================
 st.subheader("🧠 WHY WAIT? — Structural Diagnostics")
 
-if st.session_state.sales_last_scan:
-    wait_rows = []
+wait_rows = []
+for r in st.session_state.sales_last_scan:
+    if r["Final_Action"] == "WAIT":
+        regime = "STABLE"
+        if r["Z_Trap"] > 0.85 and r["Gate"] < 1.0:
+            regime = "OVER-COMPRESSED"
+        elif r["Gate"] > 1.2 and r["Sigma"] < 1.0:
+            regime = "LOW-FLOW"
+        elif r["Gate"] < 0.8:
+            regime = "ENERGY-EXHAUSTED"
 
-    for r in st.session_state.sales_last_scan:
-        if r["Final_Action"] == "WAIT":
-            regime = "STABLE"
-            if r["Z_Trap"] > 0.85 and r["Gate"] < 1.0:
-                regime = "OVER-COMPRESSED"
-            elif r["Gate"] > 1.2 and r["Sigma"] < 1.0:
-                regime = "LOW-FLOW"
-            elif r["Gate"] < 0.8:
-                regime = "ENERGY-EXHAUSTED"
+        wait_rows.append({
+            "Ticker": r["Ticker"],
+            "Gate": r["Gate"],
+            "Z_Trap": r["Z_Trap"],
+            "Sigma": r["Sigma"],
+            "Regime": regime,
+        })
 
-            wait_rows.append({
-                "Ticker": r["Ticker"],
-                "Gate": round(r["Gate"], 3),
-                "Z_Trap": round(r["Z_Trap"], 3),
-                "Sigma": round(r["Sigma"], 3),
-                "RiseScore_14d": round(r["RiseScore_14d"], 3),
-                "Regime": regime,
-            })
+st.dataframe(wait_rows, use_container_width=True)
 
-    if wait_rows:
-        st.dataframe(wait_rows, use_container_width=True)
-    else:
-        st.success("No WAIT conditions — all tickers actionable.")
+# ==================================================
+# TIME-TO-WARP ESTIMATOR (NEW)
+# ==================================================
+st.subheader("⏳ Time-to-Warp Estimator")
+
+ttw_rows = []
+for r in st.session_state.sales_last_scan:
+    readiness = (
+        (r["Gate"] / 2.0) * 0.5 +
+        (1 - r["Z_Trap"]) * 0.3 +
+        (r["Sigma"] / 2.0) * 0.2
+    )
+    readiness = max(0, min(1, readiness))
+    days = round((1 - readiness) * 10, 2)
+
+    ttw_rows.append({
+        "Ticker": r["Ticker"],
+        "Warp_Readiness": round(readiness, 3),
+        "Est_Days_to_Warp": days,
+    })
+
+st.dataframe(ttw_rows, use_container_width=True)
+
+# ==================================================
+# GENESIS DETECTOR (NEW)
+# ==================================================
+st.subheader("🌱 Genesis — Pre-Warp Precursors")
+
+genesis = []
+for r in st.session_state.sales_last_scan:
+    if (
+        r["Final_Action"] == "WAIT"
+        and r["Z_Trap"] > 0.80
+        and 0.9 < r["Gate"] < 1.3
+        and r["Sigma"] < 1.2
+    ):
+        genesis.append({
+            "Ticker": r["Ticker"],
+            "Gate": r["Gate"],
+            "Z_Trap": r["Z_Trap"],
+            "Sigma": r["Sigma"],
+            "Status": "GENESIS"
+        })
+
+if genesis:
+    st.dataframe(genesis, use_container_width=True)
 else:
-    st.info("WHY WAIT diagnostics available after first run.")
-
-st.divider()
-
-# ==================================================
-# WARP SUMMARY PANEL
-# ==================================================
-st.subheader("🌀 Warp State Summary")
-
-if (
-    hasattr(st.session_state, "attribution_ledger")
-    and not st.session_state.attribution_ledger.empty
-    and "Warp_State" in st.session_state.attribution_ledger.columns
-):
-    warp_counts = (
-        st.session_state.attribution_ledger["Warp_State"]
-        .value_counts()
-        .rename_axis("Warp_State")
-        .reset_index(name="Count")
-    )
-    st.dataframe(warp_counts, use_container_width=True)
-else:
-    st.info("Warp states will appear after outcomes are evaluated.")
-
-st.divider()
-
-# ==================================================
-# COUPLING NETWORK (WARP-AWARE)
-# ==================================================
-st.subheader("🕸 Coupling Network (Final Action + Warp)")
-
-if st.session_state.sales_last_scan:
-    G = nx.Graph()
-
-    warp_lookup = {}
-    if not st.session_state.attribution_ledger.empty:
-        for _, r in st.session_state.attribution_ledger.iterrows():
-            warp_lookup[r["Ticker"]] = r.get("Warp_State", "")
-
-    for r in st.session_state.sales_last_scan:
-        G.add_node(
-            r["Ticker"],
-            action=r["Final_Action"],
-            warp=warp_lookup.get(r["Ticker"], ""),
-        )
-
-    rows = st.session_state.sales_last_scan
-    for i in range(len(rows)):
-        for j in range(i + 1, len(rows)):
-            if rows[i]["Final_Action"] == rows[j]["Final_Action"]:
-                G.add_edge(rows[i]["Ticker"], rows[j]["Ticker"])
-
-    pos = nx.spring_layout(G, seed=42)
-
-    colors = []
-    for _, data in G.nodes(data=True):
-        if data["warp"] == "WARP_UP":
-            colors.append("lime")
-        elif data["warp"] == "WARP_DOWN":
-            colors.append("red")
-        elif data["action"] == "BUY":
-            colors.append("green")
-        elif data["action"] == "SELL":
-            colors.append("darkred")
-        else:
-            colors.append("lightgray")
-
-    fig, ax = plt.subplots(figsize=(9, 6))
-    nx.draw(
-        G,
-        pos,
-        node_color=colors,
-        with_labels=True,
-        node_size=900,
-        ax=ax,
-    )
-    ax.set_title(
-        "Warp-Aware Coupling\n"
-        "Lime = WARP_UP • Red = WARP_DOWN • Grey = PRE/POST",
-        fontsize=11,
-    )
-    st.pyplot(fig)
-else:
-    st.info("Coupling network available after first run.")
-
-st.divider()
-
-# ==================================================
-# LEDGER VIEWS
-# ==================================================
-st.subheader("🧾 Signal Ledger")
-if not st.session_state.signal_ledger.empty:
-    st.dataframe(
-        st.session_state.signal_ledger.tail(20),
-        use_container_width=True,
-    )
-else:
-    st.info("Signal ledger empty.")
-
-st.subheader("📊 Attribution + Warp Ledger")
-if not st.session_state.attribution_ledger.empty:
-    st.dataframe(
-        st.session_state.attribution_ledger.tail(20),
-        use_container_width=True,
-    )
-
-    accuracy = (
-        st.session_state.attribution_ledger
-        .Decision_Quality.eq("CORRECT")
-        .mean() * 100
-    )
-    st.metric("Decision Accuracy (%)", round(accuracy, 2))
-else:
-    st.info("Attribution ledger empty.")
-
-st.divider()
+    st.info("No Genesis configurations detected.")
 
 # ==================================================
 # NAVIGATION
@@ -289,19 +194,15 @@ c1, c2, c3, c4, c5 = st.columns(5)
 with c1:
     if st.button("🚪 Doorman"):
         st.switch_page("pages/1_Doorman.py")
-
 with c2:
     if st.button("🛎 Concierge"):
         st.switch_page("pages/2_Concierge.py")
-
 with c3:
     if st.button("🏨 Reception"):
         st.switch_page("pages/3_Reception.py")
-
 with c4:
     if st.button("📈 Sales"):
         st.switch_page("pages/4_SalesMarketing.py")
-
 with c5:
     if st.button("💰 Accounts"):
         st.switch_page("pages/5_Accounts.py")
