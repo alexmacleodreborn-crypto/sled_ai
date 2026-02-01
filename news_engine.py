@@ -1,8 +1,8 @@
 """
 news_engine.py
 --------------
-Persistent news profiling using NewsData.io
-Hardened against empty / malformed API responses
+Company-aware news profiling using NewsData.io
+Restores rich news flow (Yahoo-like) but cleaner
 """
 
 import requests
@@ -10,6 +10,36 @@ import streamlit as st
 from datetime import datetime
 
 NEWS_ENDPOINT = "https://newsdata.io/api/1/news"
+
+# ----------------------------------
+# TICKER → COMPANY NAME MAP
+# ----------------------------------
+COMPANY_MAP = {
+    "NVDA": "Nvidia",
+    "MSFT": "Microsoft",
+    "AAPL": "Apple",
+    "META": "Meta",
+    "AMZN": "Amazon",
+    "GOOGL": "Google",
+    "AMD": "AMD",
+    "INTC": "Intel",
+    "TSM": "TSMC",
+    "ASML": "ASML",
+    "ARM": "Arm Holdings",
+    "TSLA": "Tesla",
+    "PLTR": "Palantir",
+    "COIN": "Coinbase",
+    "SNOW": "Snowflake",
+    "RIVN": "Rivian",
+    "XOM": "Exxon",
+    "CVX": "Chevron",
+    "OXY": "Occidental Petroleum",
+    "SLB": "Schlumberger",
+    "JPM": "JPMorgan",
+    "GS": "Goldman Sachs",
+    "BAC": "Bank of America",
+    "MS": "Morgan Stanley",
+}
 
 POSITIVE_TERMS = {
     "growth","record","expansion","approval","beat",
@@ -38,9 +68,13 @@ def fetch_newsdata_articles(ticker: str, max_items: int = 10):
     if not api_key:
         return []
 
+    company = COMPANY_MAP.get(ticker, ticker)
+    query = f"{company} OR {ticker}"
+
     params = {
         "apikey": api_key,
-        "q": ticker,
+        "q": query,
+        "category": "business",
         "language": "en",
     }
 
@@ -54,8 +88,6 @@ def fetch_newsdata_articles(ticker: str, max_items: int = 10):
         return []
 
     results = data.get("results")
-
-    # ---- CRITICAL SAFETY CHECK ----
     if not isinstance(results, list):
         return []
 
@@ -64,6 +96,7 @@ def fetch_newsdata_articles(ticker: str, max_items: int = 10):
         text = f"{a.get('title','')} {a.get('description','')}"
         articles.append({
             "ticker": ticker,
+            "company": company,
             "title": a.get("title",""),
             "source": a.get("source_id",""),
             "sentiment": classify_sentiment(text),
@@ -75,14 +108,14 @@ def fetch_newsdata_articles(ticker: str, max_items: int = 10):
 
 def build_news_profile(ticker: str):
     """
-    Returns a persistent, safe news profile for a stock.
-    Never raises.
+    Builds a persistent, high-signal news profile.
     """
     articles = fetch_newsdata_articles(ticker)
 
     if not articles:
         return {
             "Ticker": ticker,
+            "Company": COMPANY_MAP.get(ticker, ticker),
             "News_Count": 0,
             "Sentiment": "NONE",
             "Narrative_Pressure": 0.0,
@@ -104,6 +137,7 @@ def build_news_profile(ticker: str):
 
     return {
         "Ticker": ticker,
+        "Company": COMPANY_MAP.get(ticker, ticker),
         "News_Count": len(articles),
         "Sentiment": net,
         "Narrative_Pressure": round(pressure, 3),
