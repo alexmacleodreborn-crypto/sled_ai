@@ -1,13 +1,13 @@
 """
 news_engine.py
 --------------
-Company-aware news profiling using NewsData.io
-Restores rich news flow (Yahoo-like) but cleaner
+Company-anchored news profiling for in-house guests
 """
 
 import requests
 import streamlit as st
 from datetime import datetime
+import re
 
 NEWS_ENDPOINT = "https://newsdata.io/api/1/news"
 
@@ -21,7 +21,7 @@ COMPANY_MAP = {
     "META": "Meta",
     "AMZN": "Amazon",
     "GOOGL": "Google",
-    "AMD": "AMD",
+    "AMD": "Advanced Micro Devices",
     "INTC": "Intel",
     "TSM": "TSMC",
     "ASML": "ASML",
@@ -29,47 +29,66 @@ COMPANY_MAP = {
     "TSLA": "Tesla",
     "PLTR": "Palantir",
     "COIN": "Coinbase",
-    "SNOW": "Snowflake",
-    "RIVN": "Rivian",
-    "XOM": "Exxon",
-    "CVX": "Chevron",
-    "OXY": "Occidental Petroleum",
-    "SLB": "Schlumberger",
-    "JPM": "JPMorgan",
-    "GS": "Goldman Sachs",
-    "BAC": "Bank of America",
-    "MS": "Morgan Stanley",
 }
 
-POSITIVE_TERMS = {
-    "growth","record","expansion","approval","beat",
-    "upgrade","strong","profit","surge","acquire"
+# ----------------------------------
+# KEYWORD DICTIONARIES
+# ----------------------------------
+EVENT_KEYWORDS = {
+    "earnings": "EARNINGS",
+    "revenue": "EARNINGS",
+    "guidance": "GUIDANCE",
+    "acquisition": "ACQUISITION",
+    "merger": "MERGER",
+    "lawsuit": "LEGAL",
+    "regulation": "REGULATION",
+    "approval": "APPROVAL",
+    "investigation": "INVESTIGATION",
+    "layoff": "RESTRUCTURING",
+    "factory": "CAPEX",
+    "investment": "CAPEX",
 }
 
-NEGATIVE_TERMS = {
-    "loss","decline","cut","downgrade","lawsuit",
-    "probe","delay","miss","recall","weak"
+TOPIC_KEYWORDS = {
+    "ai": "AI",
+    "chip": "SEMICONDUCTORS",
+    "cloud": "CLOUD",
+    "data": "DATA",
+    "defense": "DEFENSE",
+    "energy": "ENERGY",
+    "automotive": "AUTOMOTIVE",
+    "crypto": "CRYPTO",
+    "bank": "FINANCE",
 }
 
 
-def classify_sentiment(text: str) -> str:
-    t = (text or "").lower()
-    pos = sum(w in t for w in POSITIVE_TERMS)
-    neg = sum(w in t for w in NEGATIVE_TERMS)
-    if pos > neg:
-        return "POSITIVE"
-    if neg > pos:
-        return "NEGATIVE"
-    return "NEUTRAL"
+def extract_keywords(text: str):
+    """
+    Extract structured EVENT and TOPIC keywords from text.
+    """
+    t = text.lower()
+    tags = []
+
+    for k, v in EVENT_KEYWORDS.items():
+        if k in t:
+            tags.append(f"EVENT:{v}")
+
+    for k, v in TOPIC_KEYWORDS.items():
+        if re.search(rf"\b{k}\b", t):
+            tags.append(f"TOPIC:{v}")
+
+    return list(set(tags))
 
 
-def fetch_newsdata_articles(ticker: str, max_items: int = 10):
+def fetch_news_for_guest(ticker: str, max_items: int = 8):
     api_key = st.secrets.get("NEWSDATA_API_KEY")
     if not api_key:
         return []
 
     company = COMPANY_MAP.get(ticker, ticker)
-    query = f"{company} OR {ticker}"
+
+    # Strongly anchored query
+    query = f'"{company}" OR {ticker}'
 
     params = {
         "apikey": api_key,
@@ -82,7 +101,6 @@ def fetch_newsdata_articles(ticker: str, max_items: int = 10):
         r = requests.get(NEWS_ENDPOINT, params=params, timeout=10)
         if r.status_code != 200:
             return []
-
         data = r.json()
     except Exception:
         return []
@@ -95,52 +113,12 @@ def fetch_newsdata_articles(ticker: str, max_items: int = 10):
     for a in results[:max_items]:
         text = f"{a.get('title','')} {a.get('description','')}"
         articles.append({
-            "ticker": ticker,
-            "company": company,
-            "title": a.get("title",""),
-            "source": a.get("source_id",""),
-            "sentiment": classify_sentiment(text),
-            "published": a.get("pubDate",""),
+            "Ticker": ticker,
+            "Company": company,
+            "Title": a.get("title", ""),
+            "Published": a.get("pubDate", ""),
+            "Keywords": extract_keywords(text),
+            "Raw_Text": text[:500],
         })
 
     return articles
-
-
-def build_news_profile(ticker: str):
-    """
-    Builds a persistent, high-signal news profile.
-    """
-    articles = fetch_newsdata_articles(ticker)
-
-    if not articles:
-        return {
-            "Ticker": ticker,
-            "Company": COMPANY_MAP.get(ticker, ticker),
-            "News_Count": 0,
-            "Sentiment": "NONE",
-            "Narrative_Pressure": 0.0,
-            "Last_Update": datetime.utcnow().isoformat(),
-            "Articles": [],
-        }
-
-    pos = sum(a["sentiment"] == "POSITIVE" for a in articles)
-    neg = sum(a["sentiment"] == "NEGATIVE" for a in articles)
-
-    pressure = (pos - neg) / max(1, len(articles))
-
-    if pressure > 0.25:
-        net = "POSITIVE"
-    elif pressure < -0.25:
-        net = "NEGATIVE"
-    else:
-        net = "MIXED"
-
-    return {
-        "Ticker": ticker,
-        "Company": COMPANY_MAP.get(ticker, ticker),
-        "News_Count": len(articles),
-        "Sentiment": net,
-        "Narrative_Pressure": round(pressure, 3),
-        "Last_Update": datetime.utcnow().isoformat(),
-        "Articles": articles,
-    }
