@@ -1,15 +1,13 @@
 import streamlit as st
 from datetime import datetime
 import pandas as pd
-import networkx as nx
-import matplotlib.pyplot as plt
 
 from sled_core import (
     SLEDEngine,
     safe_history,
-    safe_news,
-    apply_news_filter,
 )
+
+from news_engine import build_news_profile
 
 from ledger_engine import (
     init_ledgers,
@@ -31,49 +29,35 @@ st.set_page_config(
 )
 
 st.title("🧿 SLEDAI — A7DO Manager")
-st.caption("Structure → Constraint → Warp → Genesis → Validation")
+st.caption("WAIT → PREPARE → BUY / SELL → WARP → GENESIS")
 
 # ==================================================
-# STATE INITIALISATION
+# STATE INIT
 # ==================================================
 init_ledgers(st.session_state)
 
 if "sales_last_scan" not in st.session_state:
     st.session_state.sales_last_scan = []
 
-if "genesis_log" not in st.session_state:
-    st.session_state.genesis_log = pd.DataFrame(
-        columns=["Timestamp", "Ticker"]
-    )
-
 engine = SLEDEngine()
 
 # ==================================================
-# EXPANDED UNIVERSE (DIVERSITY MATTERS)
+# LARGE, DIVERSE UNIVERSE
 # ==================================================
 UNIVERSE = [
-    # Mega-cap tech
     "NVDA","MSFT","AAPL","META","AMZN","GOOGL",
-    # Semiconductors
     "AMD","INTC","TSM","ASML","ARM",
-    # Growth / Volatile
-    "TSLA","PLTR","COIN","RIVN","SNOW",
-    # Energy
+    "TSLA","PLTR","COIN","SNOW","RIVN",
     "XOM","CVX","OXY","SLB",
-    # Financials
     "JPM","GS","BAC","MS",
-    # ETFs / Market
     "SPY","QQQ","IWM","XLF","XLE",
-    # Defensive
     "JNJ","PG","KO","PEP","WMT",
 ]
 
 # ==================================================
-# MAIN CONTROL
+# RUN ENGINE
 # ==================================================
-st.subheader("🚀 Autonomous Control")
-
-if st.button("RUN FULL SLED + WARP + GENESIS CYCLE (A7DO)", type="primary"):
+if st.button("🚀 RUN FULL SLED + NEWS CYCLE", type="primary"):
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     st.session_state.sales_last_scan = []
 
@@ -85,18 +69,33 @@ if st.button("RUN FULL SLED + WARP + GENESIS CYCLE (A7DO)", type="primary"):
         dfp = engine.calculate(df)
         summary = engine.summarize(dfp)
 
-        news = safe_news(ticker)
-        final_action, reason = apply_news_filter(summary["Signal"], news)
+        # ---------------- NEWS PROFILE ----------------
+        news_profile = build_news_profile(ticker)
+
+        # ---------------- ACTION LOGIC ----------------
+        final_action = summary["Signal"]
+        display_action = final_action
+
+        if final_action == "WAIT" and summary["Prepare"]:
+            if news_profile["Sentiment"] in ("POSITIVE", "MIXED"):
+                display_action = "PREPARE"
 
         record = {
             "Timestamp": now,
             "Ticker": ticker,
-            **summary,
-            "Final_Action": final_action,
-            "Reason": reason,
+            "Price": summary["Price"],
+            "Action": display_action,
+            "Gate": summary["Gate"],
+            "Z_Trap": summary["Z_Trap"],
+            "Sigma": summary["Sigma"],
+            "RiseScore_14d": summary["RiseScore_14d"],
+            "News_Sentiment": news_profile["Sentiment"],
+            "Narrative_Pressure": news_profile["Narrative_Pressure"],
         }
+
         st.session_state.sales_last_scan.append(record)
 
+        # ---------------- LEDGER ----------------
         log_signal(
             st.session_state,
             {
@@ -109,90 +108,46 @@ if st.button("RUN FULL SLED + WARP + GENESIS CYCLE (A7DO)", type="primary"):
                 "Sigma": summary["Sigma"],
                 "RiseScore_14d": summary["RiseScore_14d"],
                 "Bullseye": summary["Bullseye"],
-                "Decision_Reason": reason,
+                "Narrative_Pressure": news_profile["Narrative_Pressure"],
             }
         )
-
-        # ---------------- GENESIS DETECTION (LOGGED) ----------------
-        if (
-            final_action == "WAIT"
-            and summary["Z_Trap"] > 0.80
-            and 0.9 < summary["Gate"] < 1.3
-            and summary["Sigma"] < 1.2
-        ):
-            st.session_state.genesis_log = pd.concat(
-                [
-                    st.session_state.genesis_log,
-                    pd.DataFrame([{
-                        "Timestamp": now,
-                        "Ticker": ticker
-                    }])
-                ],
-                ignore_index=True
-            )
 
     update_outcomes(st.session_state)
     update_attribution(st.session_state)
     update_warp_states(st.session_state)
 
-    st.success("Cycle complete — Genesis logged, Warp evaluated.")
-
-st.divider()
+    st.success("Cycle complete — SLED + News integrated")
 
 # ==================================================
-# LATEST DECISIONS
+# OUTPUT — MARKET STATE
 # ==================================================
-st.subheader("📈 Latest Market Decisions")
-st.dataframe(st.session_state.sales_last_scan, use_container_width=True)
+st.subheader("📊 Market State")
 
-# ==================================================
-# GENESIS VALIDATION (NEW, CRITICAL)
-# ==================================================
-st.subheader("🧪 Genesis Validation (Measured)")
+df = pd.DataFrame(st.session_state.sales_last_scan)
 
-if not st.session_state.genesis_log.empty and not st.session_state.attribution_ledger.empty:
-    merged = pd.merge(
-        st.session_state.genesis_log,
-        st.session_state.attribution_ledger,
-        on=["Timestamp","Ticker"],
-        how="left"
-    )
+if not df.empty:
+    st.dataframe(df, use_container_width=True)
 
-    total = len(merged)
-    warp_up = (merged["Warp_State"] == "WARP_UP").sum()
-    warp_down = (merged["Warp_State"] == "WARP_DOWN").sum()
+    st.subheader("Action Distribution")
+    st.bar_chart(df["Action"].value_counts())
 
-    st.metric("Genesis Events", total)
-    st.metric("Genesis → WARP_UP (%)", round(warp_up / max(1,total) * 100, 2))
-    st.metric("Genesis → WARP_DOWN (%)", round(warp_down / max(1,total) * 100, 2))
-
-    st.dataframe(
-        merged[["Timestamp","Ticker","Warp_State","Decision_Quality"]],
-        use_container_width=True
-    )
 else:
-    st.info("Genesis validation will populate after multiple cycles.")
+    st.info("Run the cycle to populate results.")
 
 # ==================================================
-# TIME-TO-WARP ESTIMATOR
+# NEWS PROFILES
 # ==================================================
-st.subheader("⏳ Time-to-Warp Estimator")
+st.subheader("📰 Stock News Profiles")
 
-ttw = []
+profiles = []
 for r in st.session_state.sales_last_scan:
-    readiness = (
-        (r["Gate"] / 2.0) * 0.5 +
-        (1 - r["Z_Trap"]) * 0.3 +
-        (r["Sigma"] / 2.0) * 0.2
-    )
-    readiness = max(0, min(1, readiness))
-    ttw.append({
+    profiles.append({
         "Ticker": r["Ticker"],
-        "Warp_Readiness": round(readiness, 3),
-        "Est_Days_to_Warp": round((1 - readiness) * 10, 2)
+        "News_Sentiment": r["News_Sentiment"],
+        "Narrative_Pressure": r["Narrative_Pressure"],
     })
 
-st.dataframe(ttw, use_container_width=True)
+st.dataframe(profiles, use_container_width=True)
 
 # ==================================================
 # NAVIGATION
