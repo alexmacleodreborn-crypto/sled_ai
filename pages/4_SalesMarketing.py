@@ -33,13 +33,7 @@ engine = SLEDEngine()
 # ==================================================
 # SELECT GUEST
 # ==================================================
-st.subheader("🏨 Select In-House Guest")
-
-ticker = st.selectbox(
-    "Choose guest (room)",
-    options=sorted(rooms.keys())
-)
-
+ticker = st.selectbox("Select in-house guest", sorted(rooms.keys()))
 room = rooms[ticker]
 
 st.write(f"**Check-ins:** {len(room.get('History', []))}")
@@ -49,7 +43,6 @@ st.write(f"**Avg Signal Quality:** {room.get('Avg_Signal_Quality', 0.0)}")
 # LOAD DATA
 # ==================================================
 df = safe_history(ticker)
-
 if df is None or df.empty:
     st.error("No price data available.")
     st.stop()
@@ -58,53 +51,55 @@ dfp = engine.calculate(df)
 summary = engine.summarize(dfp)
 
 # ==================================================
-# PLOT: HISTORICAL + FUTURE CONE
+# BUILD PROJECTION DATA (SAFE SHAPES)
 # ==================================================
-st.subheader("📊 Price History & SLED Projection")
-
 close = df["Close"]
 dates = close.index
 
-# ---- Projection (next 7 days) ----
-last_price = close.iloc[-1]
-vol = dfp["Rolling_Std"].iloc[-1]
-energy = max(dfp["Sigma"].iloc[-1], 0.1)
+last_date = dates[-1]
+last_price = float(close.iloc[-1])
 
 days_ahead = 7
-future_dates = [dates[-1] + timedelta(days=i) for i in range(1, days_ahead + 1)]
+future_dates = [last_date + timedelta(days=i) for i in range(1, days_ahead + 1)]
 
-# Direction bias
+vol = float(dfp["Rolling_Std"].iloc[-1])
+energy = max(float(dfp["Sigma"].iloc[-1]), 0.1)
+
 bias = 0
 if summary["Signal"] == "BUY":
-    bias = +1
+    bias = 1
 elif summary["Signal"] == "SELL":
     bias = -1
 
 proj_pct = vol * energy * np.sqrt(days_ahead)
-path = [
-    last_price * (1 + bias * proj_pct * (i / days_ahead))
-    for i in range(1, days_ahead + 1)
-]
 
-upper = [
-    last_price * (1 + abs(proj_pct) * (i / days_ahead))
-    for i in range(1, days_ahead + 1)
-]
-lower = [
-    last_price * (1 - abs(proj_pct) * (i / days_ahead))
-    for i in range(1, days_ahead + 1)
-]
+# ---- Build flat arrays ----
+x_proj = [last_date] + future_dates
 
-# ---- Plot ----
+y_path = [last_price]
+y_upper = [last_price]
+y_lower = [last_price]
+
+for i in range(1, days_ahead + 1):
+    factor = i / days_ahead
+    y_path.append(last_price * (1 + bias * proj_pct * factor))
+    y_upper.append(last_price * (1 + abs(proj_pct) * factor))
+    y_lower.append(last_price * (1 - abs(proj_pct) * factor))
+
+# ==================================================
+# PLOT
+# ==================================================
+st.subheader("📊 Price History & 7-Day SLED Projection")
+
 fig, ax = plt.subplots(figsize=(12, 6))
-ax.plot(dates, close, label="Historical", color="white", lw=2)
-ax.plot([dates[-1]] + future_dates, [last_price] + path,
-        linestyle="--", lw=2, label="Projection")
+
+ax.plot(dates, close.values, label="Historical", color="white", lw=2)
+ax.plot(x_proj, y_path, "--", lw=2, label="Projection")
 
 ax.fill_between(
-    [dates[-1]] + future_dates,
-    [last_price] + lower,
-    [last_price] + upper,
+    x_proj,
+    y_lower,
+    y_upper,
     alpha=0.2,
     label="Forecast Cone"
 )
@@ -119,22 +114,16 @@ st.pyplot(fig)
 # METRICS
 # ==================================================
 c1, c2, c3, c4 = st.columns(4)
-
 c1.metric("Current Price", round(summary["Price"], 2))
 c2.metric("SLED Signal", summary["Signal"])
 c3.metric("Gate", round(summary["Gate"], 3))
 c4.metric("Sigma", round(summary["Sigma"], 3))
 
 # ==================================================
-# DEEP REPORT (30 DAYS)
+# DEEP REPORT
 # ==================================================
 st.divider()
 st.subheader("🧠 Deep 30-Day Guest Report")
-
-st.warning(
-    "This generates a structured analytical report and "
-    "routes it through Doorman as a new transaction."
-)
 
 if st.button("📄 RUN DEEP REPORT", type="primary"):
 
@@ -156,14 +145,13 @@ if st.button("📄 RUN DEEP REPORT", type="primary"):
     )
 
     st.session_state.transaction_ledger.insert(0, tx)
-
     st.success("Deep report admitted via Doorman")
 
 # ==================================================
 # PREVIEW
 # ==================================================
 st.divider()
-st.subheader("📜 Latest Deep Intelligence")
+st.subheader("📜 Latest Intelligence")
 
 st.dataframe(
     st.session_state.transaction_ledger[:15],
