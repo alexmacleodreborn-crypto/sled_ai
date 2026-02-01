@@ -2,165 +2,108 @@ import streamlit as st
 from datetime import datetime
 import pandas as pd
 
-# ---------------- CORE ENGINES ----------------
 from sled_core import SLEDEngine, safe_history
-from news_engine import build_news_profile
-from decision_engine import final_decision
-
-# ---------------- GOVERNANCE ----------------
-from transaction_engine import admit_scan_transaction
-from reception_engine import init_rooms, check_in_transaction
-from coupling_engine import update_couplings
-
-from ledger_engine import init_ledgers, log_signal
-
+from transaction_engine import admit_transaction
 
 # ==================================================
 # STREAMLIT CONFIG
 # ==================================================
 st.set_page_config(
-    page_title="SLEDAI — A7DO Manager",
+    page_title="SLEDAI — Auto Scan",
     layout="wide",
     page_icon="🧿",
 )
 
-st.title("🧿 SLEDAI — A7DO Manager")
-st.caption("All intelligence flows through Doorman → Rooms → Coupling → Decision")
+st.title("🧿 SLEDAI — Autonomous Market Scan")
+st.caption("Scan → Doorman → Downstream Processing")
 
 # ==================================================
-# INITIALISE GLOBAL STATE
+# STATE
 # ==================================================
-init_ledgers(st.session_state)
-init_rooms(st.session_state)
-
 if "transaction_ledger" not in st.session_state:
     st.session_state.transaction_ledger = []
-
-if "cycle_results" not in st.session_state:
-    st.session_state.cycle_results = []
 
 engine = SLEDEngine()
 
 # ==================================================
-# STOCK UNIVERSE
+# STOCK UNIVERSE (100 CAN GO HERE)
 # ==================================================
 UNIVERSE = [
-    "NVDA","MSFT","AAPL","META","AMZN","GOOGL",
-    "AMD","INTC","TSM","ASML","ARM",
-    "TSLA","PLTR","COIN","SNOW","RIVN",
-    "XOM","CVX","OXY","SLB",
-    "JPM","GS","BAC","MS",
+    "NVDA","MSFT","AAPL","META","AMZN","GOOGL","AMD","INTC","TSM","ASML",
+    "ARM","TSLA","PLTR","COIN","SNOW","RIVN","XOM","CVX","OXY","SLB",
+    "JPM","GS","BAC","MS","SPY","QQQ","IWM","XLF","XLE","JNJ","PG","KO",
+    "PEP","WMT","COST","ORCL","IBM","CRM","ADBE","AVGO","QCOM","TXN",
+    "AMAT","LRCX","MU","PANW","CRWD","NOW","SHOP","SQ","PYPL","ABNB",
+    "DIS","NFLX","INTU","UBER","LYFT","BA","GE","CAT","DE","MMM",
+    "NKE","SBUX","MCD","T","VZ","CSCO","ACN","SAP","SONY","TM",
+    "BABA","JD","PDD","TSM","INFY","HDB","RIO","BHP","VALE"
 ]
 
 # ==================================================
-# RUN FULL INTELLIGENCE CYCLE
+# RUN SCAN
 # ==================================================
-if st.button("🚀 RUN FULL GOVERNED INTELLIGENCE CYCLE", type="primary"):
+if st.button("🚀 RUN 7-DAY MARKET SCAN", type="primary"):
 
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    st.session_state.cycle_results = []
+    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    results = []
 
-    # --- CLEAR ROOMS & REBUILD FROM LEDGER ---
-    init_rooms(st.session_state)
-
-    # --- MAIN LOOP ---
     for ticker in UNIVERSE:
 
-        # ---------------- PRICE ----------------
         df = safe_history(ticker)
-        if df is None:
+        if df is None or len(df) < 7:
             continue
 
+        # ---------------- PAST 7 DAYS ----------------
+        past_7 = df["Close"].iloc[-7:]
+        past_change = (past_7.iloc[-1] - past_7.iloc[0]) / past_7.iloc[0]
+
+        # ---------------- SLED PROJECTION ----------------
         dfp = engine.calculate(df)
         summary = engine.summarize(dfp)
 
-        # ---------------- NEWS ----------------
-        news_profile = build_news_profile(ticker)
+        # ---------------- BUILD ROW (ARRIVAL) ----------------
+        row_text = (
+            f"{ticker} auto scan | "
+            f"Price={summary['Price']} | "
+            f"Past7d={round(past_change*100,2)}% | "
+            f"SLED={summary['Signal']} | "
+            f"Gate={summary['Gate']} | "
+            f"Z={summary['Z_Trap']} | "
+            f"Sigma={summary['Sigma']} | "
+            f"Forecast7d={summary['RiseScore_14d']}"
+        )
 
-        # ---------------- DOORMAN INGESTION ----------------
-        tx = admit_scan_transaction(
-            ticker=ticker,
-            sled_summary=summary,
-            news_profile=news_profile
+        # ---------------- DOORMAN ONLY ----------------
+        tx = admit_transaction(
+            source="AUTO_SCAN",
+            raw_text=row_text
         )
 
         st.session_state.transaction_ledger.insert(0, tx)
 
-        # ---------------- RECEPTION CHECK-IN ----------------
-        check_in_transaction(st.session_state, tx)
-
-    # ---------------- COUPLING UPDATE ----------------
-    update_couplings(st.session_state)
-
-    # ---------------- FINAL DECISION MATRIX ----------------
-    for ticker, room in st.session_state.rooms.items():
-
-        summary = next(
-            (t for t in st.session_state.transaction_ledger
-             if t["Ticker"] == ticker and t["Accepted"]),
-            None
-        )
-
-        if not summary:
-            continue
-
-        news_profile = build_news_profile(ticker)
-        coupling = room.get("Coupling", {})
-
-        action, confidence, reasons = final_decision(
-            sled_signal="WAIT",            # raw signal already encoded in tx
-            prepare=True,                  # PREPARE emerges from SLED + room
-            coupling=coupling,
-            narrative_pressure=news_profile["Narrative_Pressure"],
-        )
-
-        record = {
-            "Timestamp": now,
+        results.append({
             "Ticker": ticker,
-            "Final_Action": action,
-            "Confidence": confidence,
-            "Reasons": ", ".join(reasons),
-            "Coupling": coupling.get("Coupling_State", "NONE"),
-            "News": news_profile["Sentiment"],
-            "Avg_Signal_Quality": room.get("Avg_Signal_Quality", 0.0),
-            "Transactions": len(room.get("Transactions", [])),
-        }
+            "Price": summary["Price"],
+            "Past_7d_%": round(past_change*100, 2),
+            "SLED_Signal": summary["Signal"],
+            "Gate": summary["Gate"],
+            "Z_Trap": summary["Z_Trap"],
+            "Sigma": summary["Sigma"],
+            "Forecast_7d": summary["RiseScore_14d"],
+            "TX_ID": tx["Transaction_ID"],
+            "Accepted": tx["Accepted"],
+        })
 
-        st.session_state.cycle_results.append(record)
+    st.success(f"Scan complete — {len(results)} arrivals sent to Doorman")
 
-        log_signal(
-            st.session_state,
-            {
-                "Timestamp": now,
-                "Ticker": ticker,
-                "Final_Action": action,
-                "Confidence": confidence,
-                "Reasons": reasons,
-            }
-        )
-
-    st.success("Cycle complete — all data flowed through Doorman")
+    st.subheader("📊 Scan Output (Arrivals)")
+    st.dataframe(pd.DataFrame(results), use_container_width=True)
 
 # ==================================================
-# OUTPUT — FINAL MATRIX
+# LEDGER VIEW
 # ==================================================
-st.subheader("📊 Final Decision Matrix")
-
-df = pd.DataFrame(st.session_state.cycle_results)
-
-if not df.empty:
-    st.dataframe(df, use_container_width=True)
-
-    st.subheader("Action Distribution")
-    st.bar_chart(df["Final_Action"].value_counts())
-else:
-    st.info("Run the cycle to generate decisions.")
-
-# ==================================================
-# GOVERNANCE VISIBILITY
-# ==================================================
-st.subheader("📜 Transaction Ledger (Latest 20)")
+st.subheader("📜 Doorman Transaction Ledger (Latest 25)")
 st.dataframe(
-    st.session_state.transaction_ledger[:20],
+    st.session_state.transaction_ledger[:25],
     use_container_width=True
 )
