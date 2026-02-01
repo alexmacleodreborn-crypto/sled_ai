@@ -1,20 +1,46 @@
 import streamlit as st
+from reception_engine import init_rooms, check_in_transaction
 
 st.set_page_config(page_title="Reception", layout="wide")
-st.title("🏨 Reception — Rooms In-House")
+st.title("🏨 Reception — Rooms In House")
 
-rooms = {}
-for r in st.session_state.get("signal_ledger", []).to_dict("records"):
-    t = r["Ticker"]
-    rooms[t] = {
-        "Ticker": t,
-        "Final_Action": r["Final_Action"],
-        "Gate": r["Gate"],
-        "Z_Trap": r["Z_Trap"],
-        "Timestamp": r["Timestamp"]
-    }
+# Initialise rooms
+init_rooms(st.session_state)
 
-if rooms:
-    st.dataframe(list(rooms.values()), use_container_width=True)
+ledger = st.session_state.get("transaction_ledger", [])
+
+# Check in any new accepted transactions
+for tx in ledger:
+    check_in_transaction(st.session_state, tx)
+
+# Display rooms
+rooms = st.session_state.rooms
+
+if not rooms:
+    st.info("No rooms yet. Accepted transactions will appear here.")
 else:
-    st.info("No rooms allocated yet. Run a cycle.")
+    display = []
+    for r in rooms.values():
+        display.append({
+            "Ticker": r["Ticker"],
+            "Transactions": len(r["Transactions"]),
+            "Avg_Signal_Quality": r["Avg_Signal_Quality"],
+            "Last_Event": r["Last_Event"],
+            "Last_Updated": r["Last_Updated"],
+        })
+
+    st.dataframe(display, use_container_width=True)
+
+# Drill-down
+st.subheader("🔍 Room Details")
+
+ticker = st.selectbox(
+    "Select Ticker Room",
+    options=[""] + sorted(rooms.keys())
+)
+
+if ticker:
+    room = rooms[ticker]
+    st.markdown(f"### Room: {ticker}")
+    st.write("**Event Counts**", dict(room["Event_Counts"]))
+    st.dataframe(room["Transactions"], use_container_width=True)
