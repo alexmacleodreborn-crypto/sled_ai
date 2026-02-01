@@ -2,6 +2,7 @@
 news_engine.py
 --------------
 Persistent news profiling using NewsData.io
+Hardened against empty / malformed API responses
 """
 
 import requests
@@ -9,7 +10,6 @@ import streamlit as st
 from datetime import datetime
 
 NEWS_ENDPOINT = "https://newsdata.io/api/1/news"
-
 
 POSITIVE_TERMS = {
     "growth","record","expansion","approval","beat",
@@ -46,12 +46,21 @@ def fetch_newsdata_articles(ticker: str, max_items: int = 10):
 
     try:
         r = requests.get(NEWS_ENDPOINT, params=params, timeout=10)
+        if r.status_code != 200:
+            return []
+
         data = r.json()
     except Exception:
         return []
 
+    results = data.get("results")
+
+    # ---- CRITICAL SAFETY CHECK ----
+    if not isinstance(results, list):
+        return []
+
     articles = []
-    for a in data.get("results", [])[:max_items]:
+    for a in results[:max_items]:
         text = f"{a.get('title','')} {a.get('description','')}"
         articles.append({
             "ticker": ticker,
@@ -66,7 +75,8 @@ def fetch_newsdata_articles(ticker: str, max_items: int = 10):
 
 def build_news_profile(ticker: str):
     """
-    Returns a persistent profile summarising recent news.
+    Returns a persistent, safe news profile for a stock.
+    Never raises.
     """
     articles = fetch_newsdata_articles(ticker)
 
