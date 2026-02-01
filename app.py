@@ -91,7 +91,6 @@ if st.button("RUN FULL SLED + WARP CYCLE (A7DO)", type="primary"):
 
         st.session_state.sales_last_scan.append(record)
 
-        # ---------------- SIGNAL LEDGER ----------------
         log_signal(
             st.session_state,
             {
@@ -108,7 +107,6 @@ if st.button("RUN FULL SLED + WARP CYCLE (A7DO)", type="primary"):
             },
         )
 
-    # ---------------- OUTCOME → ATTRIBUTION → WARP ----------------
     update_outcomes(st.session_state)
     update_attribution(st.session_state)
     update_warp_states(st.session_state)
@@ -129,6 +127,42 @@ if st.session_state.sales_last_scan:
     )
 else:
     st.info("No scan results yet. Run the cycle.")
+
+st.divider()
+
+# ==================================================
+# WHY WAIT? DIAGNOSTICS (NEW)
+# ==================================================
+st.subheader("🧠 WHY WAIT? — Structural Diagnostics")
+
+if st.session_state.sales_last_scan:
+    wait_rows = []
+
+    for r in st.session_state.sales_last_scan:
+        if r["Final_Action"] == "WAIT":
+            regime = "STABLE"
+            if r["Z_Trap"] > 0.85 and r["Gate"] < 1.0:
+                regime = "OVER-COMPRESSED"
+            elif r["Gate"] > 1.2 and r["Sigma"] < 1.0:
+                regime = "LOW-FLOW"
+            elif r["Gate"] < 0.8:
+                regime = "ENERGY-EXHAUSTED"
+
+            wait_rows.append({
+                "Ticker": r["Ticker"],
+                "Gate": round(r["Gate"], 3),
+                "Z_Trap": round(r["Z_Trap"], 3),
+                "Sigma": round(r["Sigma"], 3),
+                "RiseScore_14d": round(r["RiseScore_14d"], 3),
+                "Regime": regime,
+            })
+
+    if wait_rows:
+        st.dataframe(wait_rows, use_container_width=True)
+    else:
+        st.success("No WAIT conditions — all tickers actionable.")
+else:
+    st.info("WHY WAIT diagnostics available after first run.")
 
 st.divider()
 
@@ -162,13 +196,11 @@ st.subheader("🕸 Coupling Network (Final Action + Warp)")
 if st.session_state.sales_last_scan:
     G = nx.Graph()
 
-    # build lookup for warp
     warp_lookup = {}
     if not st.session_state.attribution_ledger.empty:
         for _, r in st.session_state.attribution_ledger.iterrows():
             warp_lookup[r["Ticker"]] = r.get("Warp_State", "")
 
-    # add nodes
     for r in st.session_state.sales_last_scan:
         G.add_node(
             r["Ticker"],
@@ -176,7 +208,6 @@ if st.session_state.sales_last_scan:
             warp=warp_lookup.get(r["Ticker"], ""),
         )
 
-    # simple coupling: same final action
     rows = st.session_state.sales_last_scan
     for i in range(len(rows)):
         for j in range(i + 1, len(rows)):
@@ -209,7 +240,7 @@ if st.session_state.sales_last_scan:
     )
     ax.set_title(
         "Warp-Aware Coupling\n"
-        "Lime = WARP_UP • Red = WARP_DOWN • Grey = POST/PRE",
+        "Lime = WARP_UP • Red = WARP_DOWN • Grey = PRE/POST",
         fontsize=11,
     )
     st.pyplot(fig)
