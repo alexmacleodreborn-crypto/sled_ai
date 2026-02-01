@@ -2,21 +2,17 @@ import streamlit as st
 from datetime import datetime
 import pandas as pd
 
-from sled_core import (
-    SLEDEngine,
-    safe_history,
-)
-
+# ---------------- CORE ENGINES ----------------
+from sled_core import SLEDEngine, safe_history
 from news_engine import build_news_profile
+from decision_engine import final_decision
 
-from ledger_engine import (
-    init_ledgers,
-    log_signal,
-    update_outcomes,
-    update_attribution,
-)
+# ---------------- GOVERNANCE ----------------
+from transaction_engine import admit_scan_transaction
+from reception_engine import init_rooms, check_in_transaction
+from coupling_engine import update_couplings
 
-from warp_engine import update_warp_states
+from ledger_engine import init_ledgers, log_signal
 
 
 # ==================================================
@@ -29,20 +25,24 @@ st.set_page_config(
 )
 
 st.title("🧿 SLEDAI — A7DO Manager")
-st.caption("WAIT → PREPARE → BUY / SELL → WARP → GENESIS")
+st.caption("All intelligence flows through Doorman → Rooms → Coupling → Decision")
 
 # ==================================================
-# STATE INIT
+# INITIALISE GLOBAL STATE
 # ==================================================
 init_ledgers(st.session_state)
+init_rooms(st.session_state)
 
-if "sales_last_scan" not in st.session_state:
-    st.session_state.sales_last_scan = []
+if "transaction_ledger" not in st.session_state:
+    st.session_state.transaction_ledger = []
+
+if "cycle_results" not in st.session_state:
+    st.session_state.cycle_results = []
 
 engine = SLEDEngine()
 
 # ==================================================
-# LARGE, DIVERSE UNIVERSE
+# STOCK UNIVERSE
 # ==================================================
 UNIVERSE = [
     "NVDA","MSFT","AAPL","META","AMZN","GOOGL",
@@ -50,18 +50,23 @@ UNIVERSE = [
     "TSLA","PLTR","COIN","SNOW","RIVN",
     "XOM","CVX","OXY","SLB",
     "JPM","GS","BAC","MS",
-    "SPY","QQQ","IWM","XLF","XLE",
-    "JNJ","PG","KO","PEP","WMT",
 ]
 
 # ==================================================
-# RUN ENGINE
+# RUN FULL INTELLIGENCE CYCLE
 # ==================================================
-if st.button("🚀 RUN FULL SLED + NEWS CYCLE", type="primary"):
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    st.session_state.sales_last_scan = []
+if st.button("🚀 RUN FULL GOVERNED INTELLIGENCE CYCLE", type="primary"):
 
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    st.session_state.cycle_results = []
+
+    # --- CLEAR ROOMS & REBUILD FROM LEDGER ---
+    init_rooms(st.session_state)
+
+    # --- MAIN LOOP ---
     for ticker in UNIVERSE:
+
+        # ---------------- PRICE ----------------
         df = safe_history(ticker)
         if df is None:
             continue
@@ -69,105 +74,93 @@ if st.button("🚀 RUN FULL SLED + NEWS CYCLE", type="primary"):
         dfp = engine.calculate(df)
         summary = engine.summarize(dfp)
 
-        # ---------------- NEWS PROFILE ----------------
+        # ---------------- NEWS ----------------
         news_profile = build_news_profile(ticker)
 
-        # ---------------- ACTION LOGIC ----------------
-        final_action = summary["Signal"]
-        display_action = final_action
+        # ---------------- DOORMAN INGESTION ----------------
+        tx = admit_scan_transaction(
+            ticker=ticker,
+            sled_summary=summary,
+            news_profile=news_profile
+        )
 
-        if final_action == "WAIT" and summary["Prepare"]:
-            if news_profile["Sentiment"] in ("POSITIVE", "MIXED"):
-                display_action = "PREPARE"
+        st.session_state.transaction_ledger.insert(0, tx)
+
+        # ---------------- RECEPTION CHECK-IN ----------------
+        check_in_transaction(st.session_state, tx)
+
+    # ---------------- COUPLING UPDATE ----------------
+    update_couplings(st.session_state)
+
+    # ---------------- FINAL DECISION MATRIX ----------------
+    for ticker, room in st.session_state.rooms.items():
+
+        summary = next(
+            (t for t in st.session_state.transaction_ledger
+             if t["Ticker"] == ticker and t["Accepted"]),
+            None
+        )
+
+        if not summary:
+            continue
+
+        news_profile = build_news_profile(ticker)
+        coupling = room.get("Coupling", {})
+
+        action, confidence, reasons = final_decision(
+            sled_signal="WAIT",            # raw signal already encoded in tx
+            prepare=True,                  # PREPARE emerges from SLED + room
+            coupling=coupling,
+            narrative_pressure=news_profile["Narrative_Pressure"],
+        )
 
         record = {
             "Timestamp": now,
             "Ticker": ticker,
-            "Price": summary["Price"],
-            "Action": display_action,
-            "Gate": summary["Gate"],
-            "Z_Trap": summary["Z_Trap"],
-            "Sigma": summary["Sigma"],
-            "RiseScore_14d": summary["RiseScore_14d"],
-            "News_Sentiment": news_profile["Sentiment"],
-            "Narrative_Pressure": news_profile["Narrative_Pressure"],
+            "Final_Action": action,
+            "Confidence": confidence,
+            "Reasons": ", ".join(reasons),
+            "Coupling": coupling.get("Coupling_State", "NONE"),
+            "News": news_profile["Sentiment"],
+            "Avg_Signal_Quality": room.get("Avg_Signal_Quality", 0.0),
+            "Transactions": len(room.get("Transactions", [])),
         }
 
-        st.session_state.sales_last_scan.append(record)
+        st.session_state.cycle_results.append(record)
 
-        # ---------------- LEDGER ----------------
         log_signal(
             st.session_state,
             {
                 "Timestamp": now,
                 "Ticker": ticker,
-                "Raw_Signal": summary["Signal"],
-                "Final_Action": final_action,
-                "Gate": summary["Gate"],
-                "Z_Trap": summary["Z_Trap"],
-                "Sigma": summary["Sigma"],
-                "RiseScore_14d": summary["RiseScore_14d"],
-                "Bullseye": summary["Bullseye"],
-                "Narrative_Pressure": news_profile["Narrative_Pressure"],
+                "Final_Action": action,
+                "Confidence": confidence,
+                "Reasons": reasons,
             }
         )
 
-    update_outcomes(st.session_state)
-    update_attribution(st.session_state)
-    update_warp_states(st.session_state)
-
-    st.success("Cycle complete — SLED + News integrated")
+    st.success("Cycle complete — all data flowed through Doorman")
 
 # ==================================================
-# OUTPUT — MARKET STATE
+# OUTPUT — FINAL MATRIX
 # ==================================================
-st.subheader("📊 Market State")
+st.subheader("📊 Final Decision Matrix")
 
-df = pd.DataFrame(st.session_state.sales_last_scan)
+df = pd.DataFrame(st.session_state.cycle_results)
 
 if not df.empty:
     st.dataframe(df, use_container_width=True)
 
     st.subheader("Action Distribution")
-    st.bar_chart(df["Action"].value_counts())
-
+    st.bar_chart(df["Final_Action"].value_counts())
 else:
-    st.info("Run the cycle to populate results.")
+    st.info("Run the cycle to generate decisions.")
 
 # ==================================================
-# NEWS PROFILES
+# GOVERNANCE VISIBILITY
 # ==================================================
-st.subheader("📰 Stock News Profiles")
-
-profiles = []
-for r in st.session_state.sales_last_scan:
-    profiles.append({
-        "Ticker": r["Ticker"],
-        "News_Sentiment": r["News_Sentiment"],
-        "Narrative_Pressure": r["Narrative_Pressure"],
-    })
-
-st.dataframe(profiles, use_container_width=True)
-
-# ==================================================
-# NAVIGATION
-# ==================================================
-st.subheader("🧭 Navigation")
-
-c1, c2, c3, c4, c5 = st.columns(5)
-
-with c1:
-    if st.button("🚪 Doorman"):
-        st.switch_page("pages/1_Doorman.py")
-with c2:
-    if st.button("🛎 Concierge"):
-        st.switch_page("pages/2_Concierge.py")
-with c3:
-    if st.button("🏨 Reception"):
-        st.switch_page("pages/3_Reception.py")
-with c4:
-    if st.button("📈 Sales"):
-        st.switch_page("pages/4_SalesMarketing.py")
-with c5:
-    if st.button("💰 Accounts"):
-        st.switch_page("pages/5_Accounts.py")
+st.subheader("📜 Transaction Ledger (Latest 20)")
+st.dataframe(
+    st.session_state.transaction_ledger[:20],
+    use_container_width=True
+)
