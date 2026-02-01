@@ -85,3 +85,28 @@ def admit_transaction(source: str, raw_text: str):
     }
 
     return tx
+    
+    def admit_scan_transaction(
+    ticker: str,
+    sled_summary: dict,
+    news_profile: dict
+):
+    """
+    Converts an automated scan result into a Doorman transaction
+    """
+
+    # Build structured, quantifiable text
+    text = (
+        f"{ticker} scan | "
+        f"SLED={sled_summary['Signal']} | "
+        f"Gate={sled_summary['Gate']} | "
+        f"Z={sled_summary['Z_Trap']} | "
+        f"Sigma={sled_summary['Sigma']} | "
+        f"News={news_profile['Sentiment']} "
+        f"Pressure={news_profile['Narrative_Pressure']}"
+    )
+
+    return admit_transaction(
+        source="SALES_SCAN",
+        raw_text=text
+    )
