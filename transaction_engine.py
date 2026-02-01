@@ -8,6 +8,10 @@ import re
 import uuid
 from datetime import datetime
 
+
+# ==================================================
+# KEYWORD SETS
+# ==================================================
 EVENT_KEYWORDS = {
     "earnings": "EARNINGS",
     "guidance": "GUIDANCE",
@@ -20,20 +24,29 @@ EVENT_KEYWORDS = {
 }
 
 SPECULATIVE_TERMS = {
-    "may","might","could","possibly","rumor","speculation","believe"
+    "may", "might", "could", "possibly", "rumor", "speculation", "believe"
 }
 
 OPINION_TERMS = {
-    "think","feel","expect","likely","unlikely","seems"
+    "think", "feel", "expect", "likely", "unlikely", "seems"
 }
 
 
+# ==================================================
+# EXTRACTION & SCORING
+# ==================================================
 def extract_ticker(text: str):
-    m = re.findall(r"\b[A-Z]{2,5}\b", text)
-    return m[0] if m else None
+    """
+    Extract first uppercase ticker-like token.
+    """
+    matches = re.findall(r"\b[A-Z]{2,5}\b", text)
+    return matches[0] if matches else None
 
 
-def score_signal_quality(text: str, ticker: str):
+def score_signal_quality(text: str, ticker: str | None):
+    """
+    Quantifies informational value of input.
+    """
     score = 0.0
     t = text.lower()
 
@@ -55,25 +68,34 @@ def score_signal_quality(text: str, ticker: str):
     return max(0.0, min(1.0, score))
 
 
-def generate_tags(text: str, ticker: str):
+def generate_tags(text: str, ticker: str | None):
+    """
+    Generates minimal, high-signal tags.
+    """
     tags = []
 
     if ticker:
         tags.append(f"STOCK:{ticker}")
 
-    for k, v in EVENT_KEYWORDS.items():
-        if k in text.lower():
-            tags.append(f"EVENT:{v}")
+    for key, tag in EVENT_KEYWORDS.items():
+        if key in text.lower():
+            tags.append(f"EVENT:{tag}")
 
     return tags
 
 
+# ==================================================
+# DOORMAN ENTRY (MANUAL OR FILE)
+# ==================================================
 def admit_transaction(source: str, raw_text: str):
+    """
+    Core Doorman admission logic.
+    """
     ticker = extract_ticker(raw_text)
     quality = score_signal_quality(raw_text, ticker)
     accepted = quality >= 0.4
 
-    tx = {
+    return {
         "Transaction_ID": f"TX-{uuid.uuid4().hex[:12].upper()}",
         "Timestamp": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
         "Source": source,
@@ -84,26 +106,27 @@ def admit_transaction(source: str, raw_text: str):
         "Tags": generate_tags(raw_text, ticker) if accepted else [],
     }
 
-    return tx
-    
-    def admit_scan_transaction(
+
+# ==================================================
+# DOORMAN ENTRY (AUTOMATED SALES SCAN)
+# ==================================================
+def admit_scan_transaction(
     ticker: str,
     sled_summary: dict,
     news_profile: dict
 ):
     """
-    Converts an automated scan result into a Doorman transaction
+    Converts an automated scan result into a Doorman transaction.
     """
 
-    # Build structured, quantifiable text
     text = (
         f"{ticker} scan | "
-        f"SLED={sled_summary['Signal']} | "
-        f"Gate={sled_summary['Gate']} | "
-        f"Z={sled_summary['Z_Trap']} | "
-        f"Sigma={sled_summary['Sigma']} | "
-        f"News={news_profile['Sentiment']} "
-        f"Pressure={news_profile['Narrative_Pressure']}"
+        f"SLED={sled_summary.get('Signal')} | "
+        f"Gate={sled_summary.get('Gate')} | "
+        f"Z={sled_summary.get('Z_Trap')} | "
+        f"Sigma={sled_summary.get('Sigma')} | "
+        f"News={news_profile.get('Sentiment')} | "
+        f"Pressure={news_profile.get('Narrative_Pressure')}"
     )
 
     return admit_transaction(
