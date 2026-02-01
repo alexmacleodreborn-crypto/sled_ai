@@ -1,9 +1,9 @@
 """
 ledger_engine.py
 ----------------
-Authoritative SLED Ledger Engine
+Authoritative SLED Ledger Engine (Pandas-safe)
 
-Exports EXACTLY:
+Exports:
 - init_ledgers
 - log_signal
 - update_outcomes
@@ -12,7 +12,6 @@ Exports EXACTLY:
 
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
 from sled_core import safe_history
 
 
@@ -67,11 +66,6 @@ def init_ledgers(state):
 # ==================================================
 
 def log_signal(state, row: dict):
-    """
-    row MUST contain:
-    Timestamp, Ticker, Raw_Signal, Final_Action,
-    Gate, Z_Trap, Sigma, RiseScore_14d, Bullseye, Decision_Reason
-    """
     state.signal_ledger = pd.concat(
         [state.signal_ledger, pd.DataFrame([row])],
         ignore_index=True
@@ -83,9 +77,6 @@ def log_signal(state, row: dict):
 # ==================================================
 
 def update_outcomes(state):
-    """
-    For each signal not yet evaluated, compute outcomes.
-    """
     for _, s in state.signal_ledger.iterrows():
 
         exists = (
@@ -103,8 +94,8 @@ def update_outcomes(state):
         try:
             price_at = float(df["Close"].iloc[0])
             price_14 = float(df["Close"].iloc[-1])
-            drawdown = (df["Close"].min() - price_at) / price_at * 100
-            runup = (df["Close"].max() - price_at) / price_at * 100
+            drawdown = float((df["Close"].min() - price_at) / price_at * 100)
+            runup = float((df["Close"].max() - price_at) / price_at * 100)
         except Exception:
             continue
 
@@ -124,13 +115,10 @@ def update_outcomes(state):
 
 
 # ==================================================
-# ATTRIBUTION LEDGER
+# ATTRIBUTION LEDGER (PANDAS-SAFE)
 # ==================================================
 
 def update_attribution(state):
-    """
-    Attribute correctness AFTER outcomes exist.
-    """
     for _, o in state.outcome_ledger.iterrows():
 
         exists = (
@@ -151,27 +139,39 @@ def update_attribution(state):
 
         s = s.iloc[0]
 
+        # ---- EXPLICIT SCALAR CASTS (CRITICAL) ----
+        max_dd = float(o["Max_Drawdown_%"])
+        max_ru = float(o["Max_Runup_%"])
+        action = str(s["Final_Action"])
+
         quality = "NEUTRAL"
         avoided = 0.0
         missed = 0.0
 
-        if s["Final_Action"] == "WAIT":
-            if o["Max_Drawdown_%"] < -2:
+        if action == "WAIT":
+            if max_dd < -2.0:
                 quality = "CORRECT"
-                avoided = abs(o["Max_Drawdown_%"])
-        elif s["Final_Action"] == "BUY":
-            if o["Max_Runup_%"] > 5:
-                quality = "CORRECT"
-            elif o["Max_Drawdown_%"] < -3:
+                avoided = abs(max_dd)
+            elif max_ru > 5.0:
                 quality = "INCORRECT"
-        elif s["Final_Action"] == "SELL":
-            if o["Max_Drawdown_%"] < -5:
+                missed = max_ru
+
+        elif action == "BUY":
+            if max_ru > 5.0:
                 quality = "CORRECT"
+            elif max_dd < -3.0:
+                quality = "INCORRECT"
+
+        elif action == "SELL":
+            if max_dd < -5.0:
+                quality = "CORRECT"
+            elif max_ru > 5.0:
+                quality = "INCORRECT"
 
         row = {
             "Timestamp": o["Timestamp"],
             "Ticker": o["Ticker"],
-            "Final_Action": s["Final_Action"],
+            "Final_Action": action,
             "Decision_Quality": quality,
             "Avoided_Loss_%": round(avoided, 2),
             "Missed_Gain_%": round(missed, 2),
