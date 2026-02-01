@@ -3,38 +3,41 @@ from datetime import datetime
 import networkx as nx
 import matplotlib.pyplot as plt
 
-# ============================
-# CORE IMPORTS (ROOT FILES)
-# ============================
+# ==================================================
+# CORE IMPORTS
+# ==================================================
 from sled_core import (
     SLEDEngine,
     safe_history,
     safe_news,
-    apply_news_filter
+    apply_news_filter,
 )
 
 from ledger_engine import (
     init_ledgers,
     log_signal,
     update_outcomes,
-    update_attribution
+    update_attribution,
 )
 
-# ============================
+from warp_engine import update_warp_states
+
+
+# ==================================================
 # STREAMLIT CONFIG
-# ============================
+# ==================================================
 st.set_page_config(
     page_title="SLEDAI — A7DO Manager",
     layout="wide",
-    page_icon="🧿"
+    page_icon="🧿",
 )
 
-st.title("🧿 SLEDAI — A7DO MANAGER")
-st.caption("Structure • Information • Constraint • Measurement")
+st.title("🧿 SLEDAI — A7DO Manager")
+st.caption("Structure → Information → Constraint → Measurement → Warp")
 
-# ============================
+# ==================================================
 # STATE INITIALISATION
-# ============================
+# ==================================================
 init_ledgers(st.session_state)
 
 if "sales_last_scan" not in st.session_state:
@@ -43,22 +46,22 @@ if "sales_last_scan" not in st.session_state:
 if "inputs_log" not in st.session_state:
     st.session_state.inputs_log = []
 
-# ============================
+# ==================================================
 # ENGINE + UNIVERSE
-# ============================
+# ==================================================
 engine = SLEDEngine()
 
 UNIVERSE = [
     "NVDA", "MSFT", "AAPL", "META", "AMZN",
-    "TSLA", "AMD", "XOM", "JPM", "SPY"
+    "TSLA", "AMD", "XOM", "JPM", "SPY",
 ]
 
-# ============================
+# ==================================================
 # MAIN CONTROL
-# ============================
+# ==================================================
 st.subheader("🚀 Autonomous Control")
 
-if st.button("RUN FULL SLED CYCLE (A7DO)", type="primary"):
+if st.button("RUN FULL SLED + WARP CYCLE (A7DO)", type="primary"):
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     st.session_state.sales_last_scan = []
 
@@ -83,12 +86,12 @@ if st.button("RUN FULL SLED CYCLE (A7DO)", type="primary"):
             "Ticker": ticker,
             **summary,
             "Final_Action": final_action,
-            "Reason": reason
+            "Reason": reason,
         }
 
         st.session_state.sales_last_scan.append(record)
 
-        # --- SIGNAL LEDGER (WRITE ONCE) ---
+        # ---------------- SIGNAL LEDGER ----------------
         log_signal(
             st.session_state,
             {
@@ -102,98 +105,136 @@ if st.button("RUN FULL SLED CYCLE (A7DO)", type="primary"):
                 "RiseScore_14d": summary["RiseScore_14d"],
                 "Bullseye": summary["Bullseye"],
                 "Decision_Reason": reason,
-            }
+            },
         )
 
-    # --- OUTCOMES + ATTRIBUTION ---
+    # ---------------- OUTCOME → ATTRIBUTION → WARP ----------------
     update_outcomes(st.session_state)
     update_attribution(st.session_state)
+    update_warp_states(st.session_state)
 
-    st.success("Cycle complete. Signals, outcomes, and attribution updated.")
+    st.success("Cycle complete — SLED, Ledger, and Warp updated.")
 
 st.divider()
 
-# ============================
-# RESULTS TABLE
-# ============================
+# ==================================================
+# LATEST DECISIONS
+# ==================================================
 st.subheader("📈 Latest Market Decisions")
 
 if st.session_state.sales_last_scan:
     st.dataframe(
         st.session_state.sales_last_scan,
-        use_container_width=True
+        use_container_width=True,
     )
 else:
     st.info("No scan results yet. Run the cycle.")
 
 st.divider()
 
-# ============================
-# COUPLING NETWORK (SIMPLE)
-# ============================
-st.subheader("🕸 Coupling Network (Decision Similarity)")
+# ==================================================
+# WARP SUMMARY PANEL
+# ==================================================
+st.subheader("🌀 Warp State Summary")
+
+if (
+    hasattr(st.session_state, "attribution_ledger")
+    and not st.session_state.attribution_ledger.empty
+    and "Warp_State" in st.session_state.attribution_ledger.columns
+):
+    warp_counts = (
+        st.session_state.attribution_ledger["Warp_State"]
+        .value_counts()
+        .rename_axis("Warp_State")
+        .reset_index(name="Count")
+    )
+    st.dataframe(warp_counts, use_container_width=True)
+else:
+    st.info("Warp states will appear after outcomes are evaluated.")
+
+st.divider()
+
+# ==================================================
+# COUPLING NETWORK (WARP-AWARE)
+# ==================================================
+st.subheader("🕸 Coupling Network (Final Action + Warp)")
 
 if st.session_state.sales_last_scan:
     G = nx.Graph()
 
+    # build lookup for warp
+    warp_lookup = {}
+    if not st.session_state.attribution_ledger.empty:
+        for _, r in st.session_state.attribution_ledger.iterrows():
+            warp_lookup[r["Ticker"]] = r.get("Warp_State", "")
+
+    # add nodes
     for r in st.session_state.sales_last_scan:
         G.add_node(
             r["Ticker"],
-            action=r["Final_Action"]
+            action=r["Final_Action"],
+            warp=warp_lookup.get(r["Ticker"], ""),
         )
 
-    # simple coupling: same action
-    for i in range(len(st.session_state.sales_last_scan)):
-        for j in range(i + 1, len(st.session_state.sales_last_scan)):
-            a = st.session_state.sales_last_scan[i]
-            b = st.session_state.sales_last_scan[j]
-            if a["Final_Action"] == b["Final_Action"]:
-                G.add_edge(a["Ticker"], b["Ticker"])
+    # simple coupling: same final action
+    rows = st.session_state.sales_last_scan
+    for i in range(len(rows)):
+        for j in range(i + 1, len(rows)):
+            if rows[i]["Final_Action"] == rows[j]["Final_Action"]:
+                G.add_edge(rows[i]["Ticker"], rows[j]["Ticker"])
 
     pos = nx.spring_layout(G, seed=42)
 
     colors = []
-    for n in G.nodes(data=True):
-        if n[1]["action"] == "BUY":
-            colors.append("green")
-        elif n[1]["action"] == "SELL":
+    for _, data in G.nodes(data=True):
+        if data["warp"] == "WARP_UP":
+            colors.append("lime")
+        elif data["warp"] == "WARP_DOWN":
             colors.append("red")
+        elif data["action"] == "BUY":
+            colors.append("green")
+        elif data["action"] == "SELL":
+            colors.append("darkred")
         else:
             colors.append("lightgray")
 
-    fig, ax = plt.subplots(figsize=(8, 6))
+    fig, ax = plt.subplots(figsize=(9, 6))
     nx.draw(
         G,
         pos,
         node_color=colors,
         with_labels=True,
         node_size=900,
-        ax=ax
+        ax=ax,
     )
-    ax.set_title("BUY (green) • SELL (red) • WAIT (grey)")
+    ax.set_title(
+        "Warp-Aware Coupling\n"
+        "Lime = WARP_UP • Red = WARP_DOWN • Grey = POST/PRE",
+        fontsize=11,
+    )
     st.pyplot(fig)
 else:
     st.info("Coupling network available after first run.")
 
 st.divider()
 
-# ============================
+# ==================================================
 # LEDGER VIEWS
-# ============================
+# ==================================================
 st.subheader("🧾 Signal Ledger")
 if not st.session_state.signal_ledger.empty:
     st.dataframe(
         st.session_state.signal_ledger.tail(20),
-        use_container_width=True
+        use_container_width=True,
     )
 else:
     st.info("Signal ledger empty.")
 
-st.subheader("📊 Attribution Ledger")
+st.subheader("📊 Attribution + Warp Ledger")
 if not st.session_state.attribution_ledger.empty:
     st.dataframe(
         st.session_state.attribution_ledger.tail(20),
-        use_container_width=True
+        use_container_width=True,
     )
 
     accuracy = (
@@ -207,9 +248,9 @@ else:
 
 st.divider()
 
-# ============================
+# ==================================================
 # NAVIGATION
-# ============================
+# ==================================================
 st.subheader("🧭 Navigation")
 
 c1, c2, c3, c4, c5 = st.columns(5)
