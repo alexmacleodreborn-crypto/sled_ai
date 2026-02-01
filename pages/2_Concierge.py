@@ -1,98 +1,92 @@
 import streamlit as st
+import pandas as pd
 from datetime import datetime
 
-from news_engine import build_news_profile
-from transaction_engine import admit_transaction
 from reception_engine import init_rooms
+from news_engine import fetch_news_for_guest
+from transaction_engine import admit_transaction
 
-# ==================================================
-# PAGE CONFIG
-# ==================================================
-st.set_page_config(
-    page_title="Concierge",
-    layout="wide",
-)
+st.set_page_config(page_title="Concierge", layout="wide")
 
-st.title("🛎️ Concierge — Guest Intelligence Desk")
-st.caption("Follow-up information only. No scanning. No decisions.")
+st.title("🛎️ Concierge — Guest Intelligence Follow-Up")
+st.caption("News follow-ups only. No scanning. No decisions.")
 
-# ==================================================
+# --------------------------------------------------
 # STATE
-# ==================================================
-if "transaction_ledger" not in st.session_state:
-    st.session_state.transaction_ledger = []
-
+# --------------------------------------------------
 init_rooms(st.session_state)
 rooms = st.session_state.rooms
 
-# ==================================================
-# DISPLAY CURRENT GUESTS
-# ==================================================
+if "transaction_ledger" not in st.session_state:
+    st.session_state.transaction_ledger = []
+
+# --------------------------------------------------
+# GUEST LIST
+# --------------------------------------------------
 st.subheader("🏨 Guests Currently In-House")
 
 if not rooms:
     st.info("No guests in-house yet. Run Auto Scan first.")
     st.stop()
 
-guest_table = []
+guest_rows = []
 for ticker, room in rooms.items():
-    guest_table.append({
+    guest_rows.append({
         "Ticker": ticker,
-        "Transactions_In_House": len(room.get("Transactions", [])),
-        "Last_Updated": room.get("Last_Updated"),
+        "Check-Ins": len(room.get("History", [])),
+        "Transactions": len(room.get("Transactions", [])),
         "Avg_Signal_Quality": room.get("Avg_Signal_Quality", 0.0),
+        "Last_CheckIn": room.get("Last_CheckIn"),
     })
 
-st.dataframe(guest_table, use_container_width=True)
+st.dataframe(pd.DataFrame(guest_rows), use_container_width=True)
 
-# ==================================================
-# RUN NEWS ON GUESTS
-# ==================================================
+# --------------------------------------------------
+# NEWS ACTION
+# --------------------------------------------------
 st.divider()
-st.subheader("📰 Run News on In-House Guests")
+st.subheader("📰 Run News on Guests")
 
 st.warning(
-    "This will fetch recent business news for each guest and "
-    "send results through Doorman as new arrivals."
+    "This fetches business news for each in-house guest and "
+    "routes each item through Doorman as a new arrival."
 )
 
 if st.button("🔍 RUN NEWS CHECK", type="primary"):
 
-    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-    news_count = 0
+    news_total = 0
 
     for ticker in rooms.keys():
 
-        profile = build_news_profile(ticker)
+        articles = fetch_news_for_guest(ticker)
 
-        if profile["News_Count"] == 0:
-            continue
+        for art in articles:
 
-        # Build a structured, quantifiable news summary
-        news_text = (
-            f"{ticker} news update | "
-            f"Sentiment={profile['Sentiment']} | "
-            f"Articles={profile['News_Count']} | "
-            f"NarrativePressure={profile['Narrative_Pressure']}"
-        )
+            keyword_text = " ".join(art["Keywords"])
 
-        tx = admit_transaction(
-            source="NEWS",
-            raw_text=news_text
-        )
+            raw_text = (
+                f"{art['Company']} ({ticker}) news | "
+                f"{keyword_text} | "
+                f"{art['Title']}"
+            )
 
-        st.session_state.transaction_ledger.insert(0, tx)
-        news_count += 1
+            tx = admit_transaction(
+                source="NEWS",
+                raw_text=raw_text
+            )
 
-    st.success(f"News check complete — {news_count} news arrivals sent to Doorman")
+            st.session_state.transaction_ledger.insert(0, tx)
+            news_total += 1
 
-# ==================================================
-# LEDGER PREVIEW
-# ==================================================
+    st.success(f"{news_total} news items admitted via Doorman")
+
+# --------------------------------------------------
+# PREVIEW LATEST NEWS ARRIVALS
+# --------------------------------------------------
 st.divider()
-st.subheader("📜 Latest Concierge Transactions")
+st.subheader("📜 Latest News Arrivals")
 
 st.dataframe(
-    st.session_state.transaction_ledger[:20],
+    st.session_state.transaction_ledger[:25],
     use_container_width=True
 )
