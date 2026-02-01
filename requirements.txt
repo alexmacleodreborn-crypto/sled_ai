@@ -1,7 +1,9 @@
-streamlit
-pandas
-numpy
-matplotlib
-scipy
-lightkurve
-astropy
+streamlit>=1.41
+pandas>=2.2
+numpy>=1.26
+yfinance>=0.2.43
+matplotlib>=3.8
+scipy>=1.11
+networkx>=3.2
+python-dateutil>=2.9
+pytz>=2024.1
