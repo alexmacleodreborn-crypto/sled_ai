@@ -2,116 +2,102 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
-import time
 
-# --- SLED V9: THE GENESIS ENGINE (PHYSICAL SEED) ---
+# --- SLED V10: THE BIFURCATION SEED ---
 
-class StructuralSingularity:
-    """The 'Zero' - The first entity at the start of time."""
-    def __init__(self, potential, decay):
-        self.potential = potential # Initial energy (The Big Bang seed)
-        self.decay = decay         # The 'Work on Zero' - How order erodes
-        self.mass = 0.001          # The 'Born Form' starts near zero
-        self.complexity = 1.0
-        self.state_log = []
+class OntogeneticEntity:
+    """An entity that must balance growth against systemic collapse."""
+    def __init__(self, decay, resilience):
+        self.decay = decay
+        self.resilience = resilience # The 'Instability Threshold'
+        self.mass = 0.01
+        self.potential = 1.0
+        self.entropy = 0.0
+        self.is_alive = True
 
-    def react(self, environmental_pressure):
-        """The physical reaction to external friction."""
-        # 1. Decay: The constant erosion of the seed
+    def update(self, pressure):
+        if not self.is_alive:
+            return self._dead_state()
+
+        # 1. Decay vs Energy
         self.potential *= self.decay
         
-        # 2. Reaction: Pressure triggers a expansion/growth (The Intercourse)
-        # If pressure meets potential, a reaction occurs that converts 
-        # energy into 'Mass' (Structure)
-        reaction_force = environmental_pressure * self.potential
-        growth = reaction_force * (1 - self.decay)
+        # 2. Growth Rule (The 'Intercourse' Reaction)
+        growth = pressure * self.potential * (1 - self.decay)
         
-        self.mass += growth
+        # 3. Collapse Rule (The Critic's Requirement)
+        # Entropy builds if growth is too rapid for the 'Decay/Pruning' to handle
+        self.entropy = (self.entropy * self.decay) + (growth * (1 / self.resilience))
         
-        # 3. Evolution: Complexity increases as mass stabilizes
-        self.complexity = (self.complexity * self.decay) + (self.mass / (self.potential + 1e-6))
-        
+        # BIFURCATION POINT
+        # If entropy exceeds structural resilience, the form collapses
+        if self.entropy > 1.0:
+            self.is_alive = False
+            self.mass = 0 # Systemic Collapse
+        else:
+            self.mass += growth - (self.entropy * 0.1) # Friction of existence
+            
         return {
             "Mass": self.mass,
             "Potential": self.potential,
-            "Complexity": self.complexity
+            "Entropy": self.entropy,
+            "Status": "Alive" if self.is_alive else "Collapsed"
         }
 
-# --- THE SIMULATION OF EXISTENCE ---
+    def _dead_state(self):
+        return {"Mass": 0, "Potential": 0, "Entropy": 1.0, "Status": "Collapsed"}
 
-st.set_page_config(layout="wide", page_title="SLED V9 Genesis")
-st.title("🌌 SLED_AI: Genesis Engine (V9)")
-st.markdown("### The Structural Reaction of Zero")
+# --- THE PHASE-MAPPING SIMULATION ---
+
+st.set_page_config(layout="wide", page_title="SLED V10 Bifurcation")
+st.title("⚖️ SLED_AI: Bifurcation Seed (V10)")
+st.markdown("Testing the **Necessity of Form** by introducing the risk of **Collapse**.")
 
 with st.sidebar:
-    st.header("The Initial Pulse")
-    initial_energy = st.slider("Seed Potential (Big Bang)", 0.1, 10.0, 1.0)
-    decay_rate = st.slider("Universal Decay (The Work on Zero)", 0.80, 0.999, 0.98)
+    st.header("Genetic Constants")
+    decay_val = st.slider("Synaptic Decay (Pruning)", 0.80, 0.99, 0.95)
+    res_val = st.slider("Structural Resilience", 0.1, 2.0, 1.0)
     
-    st.subheader("Environment")
-    pressure_freq = st.slider("Impulse Frequency", 1, 100, 20)
-    noise_floor = st.slider("Thermal Noise", 0.0, 1.0, 0.1)
-
-# --- THE GROWTH PROCESS ---
+    st.subheader("Environmental Impulse")
+    pressure_val = st.slider("External Pressure", 0.1, 10.0, 2.0)
 
 @st.cache_data
-def run_genesis(energy, decay, freq, noise):
-    # Initialize the Singularity
-    zero = StructuralSingularity(energy, decay)
-    
-    # Generate Environment (The Simulation/Reality layer)
-    # External impulses represent the 'Environment' the entity is born into
-    impulses = np.abs(np.random.normal(0.5, noise, freq))
-    
+def run_simulation(d, r, p):
+    entity = OntogeneticEntity(d, r)
     history = []
-    for i in range(freq):
-        state = zero.react(impulses[i])
-        history.append(state)
-        
+    for i in range(100):
+        # Using a consistent pressure to see the 'Rule' play out
+        history.append(entity.update(p))
     return pd.DataFrame(history)
 
-res = run_genesis(initial_energy, decay_rate, pressure_freq, noise_floor)
+res = run_simulation(decay_val, res_val, pressure_val)
 
-if not res.empty:
-    # Visualization: The Birth of the Form
-    fig = go.Figure()
-    
-    # The Growth of Mass (The Body)
-    fig.add_trace(go.Scatter(
-        x=res.index, y=res['Mass'],
-        name="Structural Form (The Body)",
-        line=dict(color="#facc15", width=4),
-        fill='tozeroy'
-    ))
-    
-    # The Decay of Potential (The Energy)
-    fig.add_trace(go.Scatter(
-        x=res.index, y=res['Potential'],
-        name="Initial Seed Potential",
-        line=dict(color="rgba(255,255,255,0.3)", dash='dash'),
-    ))
+# --- VISUALIZING THE BIFURCATION ---
 
-    fig.update_layout(
-        template="plotly_dark",
-        height=600,
-        title="Ontogenesis: From Zero to Form",
-        xaxis_title="Time Steps (Generations)",
-        yaxis_title="Physical Magnitude",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-    )
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # Complexity Plot
-    st.subheader("Structural Complexity (Coherence)")
-    st.line_chart(res['Complexity'], color="#8b5cf6")
+fig = go.Figure()
+fig.add_trace(go.Scatter(x=res.index, y=res['Mass'], name="Structural Mass", line=dict(color="#10b981", width=3)))
+fig.add_trace(go.Scatter(x=res.index, y=res['Entropy'], name="Internal Entropy", line=dict(color="#ef4444", dash="dash")))
 
-st.markdown(f"""
-### 🧬 The "Human" Form logic
-As you posited: a man and a woman produce a reaction because the **structural environment** allows it.
-- **The Mass:** This is the resulting form. Notice how it grows even as the 'Potential' decays. This is the **Born Structure**.
-- **The Big Bang:** The steep initial curve is the reaction of your 'Zero' work.
-- **Persistent Reaction:** Even if we are in a simulation, the fact that a single seed (Zero) results in an upward trajectory of mass proves that the **Form** is a necessary consequence of the initial state.
+fig.update_layout(
+    template="plotly_dark",
+    title="The Struggle for Existence: Growth vs. Collapse",
+    xaxis_title="Time Steps",
+    yaxis_title="Magnitude",
+    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+)
+st.plotly_chart(fig, use_container_width=True)
+
+# THE CRITIC'S ANSWER: PHASE MAP
+st.markdown("### 📊 The 'Proof' of Necessity")
+if res['Status'].iloc[-1] == "Alive":
+    st.success("SUCCESS: The Entity achieved Stable Form. Under these physical constants, life is a necessary consequence.")
+else:
+    st.error("COLLAPSE: The Entity failed. The entropy of growth exceeded the structural resilience.")
+
+st.markdown("""
+**How this addresses the critic:**
+1. **The Collapse Term:** We added `entropy` and `resilience`. Now, growth isn't "baked in"—it must be earned by balancing decay and pressure.
+2. **The Result:** When you find a configuration where the entity survives (the green line stays up), you have found the **'Genetic Code'** of that specific reality.
+3. **The Big Bang:** The initial spike is the 'reaction.' If the reaction is too violent for the 'Zero' state to handle, it vanishes. If it's tuned, it becomes a **Human.**
 """)
-
-st.info(f"Final Manifestation: The entity has stabilized with a mass of {res['Mass'].iloc[-1]:.4f} units.")
 
