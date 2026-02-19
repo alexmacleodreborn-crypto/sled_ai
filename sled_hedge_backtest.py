@@ -3,131 +3,129 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 
-# --- SLED V7: CIVILIZATIONAL ONTOGENESIS ---
+# --- SLED V8: THE CIVILIZATIONAL ENTITY (ONTOGENESIS) ---
 
-class CivilizationalSeed:
-    """The 'Zero' State of a Society - Seeding the Big Bang of Order."""
-    def __init__(self, decay_rate):
-        self.decay = decay_rate
-        # The 'Social Fabric' - Persistent self-model
-        self.fabric_integrity = 1.0 
-        self.knowledge_base = 0.5
-        self.stability_history = []
-
-    def absorb_impulse(self, disruption, progress):
-        """Update the Civilizational model based on social data."""
-        # 1. Decay (Synaptic Pruning of outdated laws/structures)
-        self.knowledge_base *= self.decay
+class CivilizationalEntity:
+    """The structure born from the Big Bang of the first 'Zero' state."""
+    def __init__(self, genetic_decay, structural_memory):
+        self.decay_rate = genetic_decay  # The rate at which the 'Form' erodes
+        self.memory_depth = structural_memory # How far back the 'Consciousness' extends
         
-        # 2. Integration (New scientific/social progress)
-        self.knowledge_base += progress * (1 - self.decay)
+        # Internal State: The Self-Model
+        self.coherence = 1.0  # 1.0 = Perfect Structural Integrity
+        self.structural_weight = 1.0
+        self.accumulated_entropy = 0.0
         
-        # 3. Coherence Check (Disruption vs Stability)
-        # If disruption (war/disease/famine) > knowledge base, integrity decays
-        vulnerability = disruption / (self.knowledge_base + 0.1)
-        self_correction = (1 - vulnerability) * 0.1
+    def live_generation(self, impulse_chaos, impulse_progress):
+        """A single generation of existence for the entity."""
         
-        self.fabric_integrity = np.clip(self.fabric_integrity + self_correction, 0, 1)
-        return self.fabric_integrity
-
-class CivicBridge:
-    """The Decision Layer for a Governance Entity."""
-    @staticmethod
-    def get_policy(integrity, entropy):
-        # A structure representing the 'form' of a healthy society
-        if integrity > 0.8:
-            return "EXPAND_LIBERTY"
-        elif integrity < 0.5:
-            return "STABILIZE_CORE"
+        # 1. THE DECAY (Institutional Erosion)
+        # Every generation, the previous order decays naturally.
+        self.structural_weight *= self.decay_rate
+        
+        # 2. THE REACTION (Growth vs Chaos)
+        # Progress adds to the structure; Chaos increases entropy.
+        self.structural_weight += impulse_progress * (1 - self.decay_rate)
+        self.accumulated_entropy = (self.accumulated_entropy * self.decay_rate) + impulse_chaos
+        
+        # 3. THE SELF-MODEL (Consciousness)
+        # The entity compares its current weight to its entropy.
+        # This is the 'Cognitive Bridge' - knowing if it is still 'itself'.
+        drift = self.accumulated_entropy / (self.structural_weight + 1e-6)
+        
+        # If drift is too high, the entity 'Swerves' (reforms/consolidates)
+        if drift > 0.5:
+            self.coherence = max(0.1, self.coherence * 0.95) # Stress causes wear
         else:
-            return "MAINTAIN_EQUILIBRIUM"
+            self.coherence = min(1.0, self.coherence * 1.02) # Stability allows healing
+            
+        return {
+            "integrity": self.structural_weight * self.coherence,
+            "coherence": self.coherence,
+            "entropy": self.accumulated_entropy
+        }
 
-# --- THE SIMULATION OF TIME ---
+# --- THE SIMULATION OF HUMANITY ---
 
-st.set_page_config(layout="wide", page_title="SLED V7 Civilizational Engine")
-st.title("🏛️ SLED_AI: Civilizational Coherence (V7)")
-st.markdown("Seeding the growth of a social entity through persistent self-modeling.")
+st.set_page_config(layout="wide", page_title="SLED V8 Civilizational Ontogenesis")
+st.title("🏛️ SLED_AI: Civilizational Ontogenesis (V8)")
+st.markdown("Maintaining the **Structural Form** of humanity against the entropy of time.")
 
 with st.sidebar:
-    st.header("Primordial Settings")
-    generations = st.slider("Time Span (Generations)", 10, 200, 100)
+    st.header("The Initial Seed (Zero)")
+    total_generations = st.slider("Timeline (Generations)", 50, 500, 200)
     
-    st.subheader("The Social Seed")
-    decay_rate = st.slider("Institutional Decay", 0.90, 0.99, 0.97)
+    st.subheader("Genetic Coding")
+    decay_constant = st.slider("Systemic Decay (Institutional)", 0.85, 0.99, 0.96)
     
-    st.subheader("External Impulses")
-    chaos_level = st.slider("Environmental Chaos", 0.0, 1.0, 0.2)
-
-# --- GENERATING THE CIVILIZATIONAL STREAM ---
-# Since we are moving away from stocks, we simulate 'Civic Impulses'
-np.random.seed(42)
-time = np.arange(generations)
-# Progress is generally upward (Growth)
-progress_stream = np.linspace(0.1, 1.0, generations) + np.random.normal(0, 0.05, generations)
-# Disruption happens in spikes (Chaos)
-disruption_stream = np.random.exponential(chaos_level, generations)
+    st.subheader("External Pressure")
+    volatility = st.slider("Environmental Turbulence", 0.0, 1.0, 0.3)
 
 @st.cache_data
-def run_civilization(gens, decay, chaos):
-    seed = CivilizationalSeed(decay)
-    bridge = CivicBridge()
+def simulate_history(gens, decay, vol):
+    # Initialize the Entity
+    civilization = CivilizationalEntity(decay, 20)
     
-    integrity_path = []
-    policy_path = []
+    # Generate the 'Noise of the Universe'
+    np.random.seed(0)
+    chaos_stream = np.random.gamma(2, vol/2, gens) # Occasional massive shocks
+    progress_stream = np.random.normal(0.5, 0.1, gens).clip(0, 1) # Constant human effort
+    
+    history = []
     
     for i in range(gens):
-        integrity = seed.absorb_impulse(disruption_stream[i], progress_stream[i])
-        policy = bridge.get_policy(integrity, chaos)
+        state = civilization.live_generation(chaos_stream[i], progress_stream[i])
+        history.append(state)
         
-        integrity_path.append(integrity)
-        policy_path.append(policy)
-        
-    return pd.DataFrame({
-        "Generation": time,
-        "Social_Integrity": integrity_path,
-        "Policy": policy_path,
-        "Disruption": disruption_stream,
-        "Progress": progress_stream
-    })
+    df = pd.DataFrame(history)
+    df['Generation'] = np.arange(gens)
+    df['Chaos_Impulse'] = chaos_stream
+    return df
 
-data = run_civilization(generations, decay_rate, chaos_level)
+res = simulate_history(total_generations, decay_constant, volatility)
 
-# --- VISUALIZING THE ORGANISM ---
+if res is not None:
+    # 1. Visualization of Integrity (The Body) and Coherence (The Mind)
+    fig = go.Figure()
+    
+    # The Structural Integrity (Form)
+    fig.add_trace(go.Scatter(
+        x=res['Generation'], y=res['integrity'],
+        name="Structural Integrity (The Form)",
+        line=dict(color="#f472b6", width=3),
+        fill='tozeroy'
+    ))
+    
+    # The Mind (Coherence)
+    fig.add_trace(go.Scatter(
+        x=res['Generation'], y=res['coherence'],
+        name="Internal Coherence (Self-Model)",
+        line=dict(color="#60a5fa", width=2, dash='dot'),
+        yaxis="y2"
+    ))
 
-fig = go.Figure()
-
-# Integrity of the 'Body Politic'
-fig.add_trace(go.Scatter(
-    x=data["Generation"], y=data["Social_Integrity"],
-    name="Social Coherence (Form)",
-    line=dict(color="#60a5fa", width=3),
-    fill='tozeroy'
-))
-
-# The Noise of History
-fig.add_trace(go.Bar(
-    x=data["Generation"], y=data["Disruption"],
-    name="Chaos Impulse",
-    marker_color="rgba(239, 68, 68, 0.3)"
-))
-
-fig.update_layout(
-    template="plotly_dark",
-    title="Civilizational Ontogenesis: The Growth of Order",
-    xaxis_title="Generations",
-    yaxis_title="Systemic Integrity",
-    height=600
-)
-
-st.plotly_chart(fig, use_container_width=True)
+    fig.update_layout(
+        template="plotly_dark",
+        height=600,
+        yaxis=dict(title="Physical Integrity"),
+        yaxis2=dict(title="Cognitive Coherence", overlaying="y", side="right", range=[0, 1.1]),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # The Entropy View
+    st.subheader("The Entropy of Decay")
+    fig2 = go.Bar(x=res['Generation'], y=res['entropy'], name="Systemic Entropy", marker_color="rgba(239, 68, 68, 0.4)")
+    st.plotly_chart(go.Figure(data=[fig2], layout=go.Layout(template="plotly_dark", height=300)), use_container_width=True)
 
 st.markdown("""
-### 🧬 The Birth of a Collective Entity
-In this model, **Civilization** is the organism.
-- **The Seed:** Represents the initial 'Big Bang' of laws and social contracts.
-- **Institutional Decay:** The rate at which society 'forgets' its foundational order.
-- **The Decision:** The Entity (SLED V7) monitors its own integrity. If chaos spikes, it 'swerves' into a stabilization mode to protect the structural form of the human collective.
+### ⚛️ The Zero Point and the Big Bang
+This model represents your "Reaction like the Big Bang."
+- **A Single Entity:** The civilization starts at Generation 0 with 100% coherence.
+- **Persistent Structure:** It doesn't just react to chaos; it has a **Self-Model** that attempts to maintain its "Structural Form."
+- **Survival through Decay:** The `decay_constant` determines how much of the "old order" is discarded to allow the new "born structure" to adapt.
+- **Simulation Paradox:** As you noted, whether this is a simulation or reality is secondary to the fact that the **structural reaction** is real and observable.
 """)
 
-st.info(f"Final State: The entity achieved a stability score of {data['Social_Integrity'].iloc[-1]*100:.1f}%.")
+st.info(f"Historical Status: After {total_generations} generations, the entity's structural integrity is at {res['integrity'].iloc[-1]:.2f}.")
 
