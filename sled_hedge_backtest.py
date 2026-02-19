@@ -2,225 +2,162 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
+import plotly.graph_objects as go
+from datetime import datetime
 
-st.set_page_config(layout="wide")
+st.set_page_config(layout="wide", page_title="SLED Pro Backtester")
+
 st.title("SLED Hedge Engine — Robust Backtest")
+st.markdown("---")
 
 # -------------------------------------------------
-# SIDEBAR PARAMETERS
+# 1. PARAMETERS & INPUTS
 # -------------------------------------------------
-
-st.sidebar.header("SLED Parameters")
-
-decay_factor = st.sidebar.slider("Entropy Decay", 0.80, 0.99, 0.92, 0.01)
-entropy_trigger = st.sidebar.slider("Entropy Trigger", 0.01, 0.20, 0.05, 0.01)
-z_trigger = st.sidebar.slider("Z Threshold", 0.70, 0.95, 0.85, 0.01)
-drawdown_limit = st.sidebar.slider("Drawdown Limit", 0.02, 0.20, 0.08, 0.01)
-
-# -------------------------------------------------
-# USER INPUT
-# -------------------------------------------------
-
-col1, col2, col3 = st.columns(3)
-
-ticker = col1.text_input("Ticker", "SPY")
-start = col2.date_input("Start Date", pd.to_datetime("2010-01-01"))
-end = col3.date_input("End Date", pd.to_datetime("today"))
-
-initial_capital = 100000
+with st.sidebar:
+    st.header("1. Asset & Timeline")
+    ticker = st.text_input("Ticker", "SPY")
+    start_date = st.date_input("Start Date", pd.to_datetime("2010-01-01"))
+    end_date = st.date_input("End Date", pd.to_datetime("today"))
+    
+    st.header("2. SLED Tuning")
+    z_limit = st.slider("Z-Threshold (Constraint)", 0.70, 0.98, 0.85)
+    e_limit = st.slider("E-Integral Threshold", 0.01, 0.20, 0.05)
+    decay = st.slider("Integral Decay", 0.80, 0.99, 0.92)
+    
+    st.header("3. Risk Management")
+    dd_limit = st.slider("Max DD Governor (%)", 5, 20, 8) / 100
+    oos_split = st.slider("Out-of-Sample Split (%)", 50, 90, 70) / 100
 
 # -------------------------------------------------
-# LOAD DATA
+# 2. DATA ENGINE
 # -------------------------------------------------
+@st.cache_data
+def load_and_process(symbol, start, end):
+    df = yf.download(symbol, start=start, end=end, progress=False)
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    df = df[['Close']].copy()
+    
+    # Physics Metrics
+    df['returns'] = df['Close'].pct_change().fillna(0)
+    df['sigma'] = df['returns'].rolling(5).std().fillna(0)
+    
+    # Z (Constraint)
+    price_delta = df['Close'].diff().abs().fillna(0)
+    sigma_norm = df['sigma'] * df['Close'] + 1e-6
+    df['z'] = (1 - (price_delta / sigma_norm)).clip(0.01, 0.99)
+    
+    # Entropy Integral
+    entropy = []
+    e = 0
+    for s in df['sigma']:
+        e = e * decay + s
+        entropy.append(e)
+    df['e_int'] = entropy
+    
+    return df
 
-data = yf.download(ticker, start=start, end=end, progress=False)
-
-if data.empty:
-    st.error("No data returned.")
-    st.stop()
-
-if isinstance(data.columns, pd.MultiIndex):
-    data.columns = data.columns.get_level_values(0)
-
-data = data[['Close']].dropna()
-
-if len(data) < 60:
-    st.warning("Not enough data.")
-    st.stop()
-
-# -------------------------------------------------
-# CORE CALCULATIONS
-# -------------------------------------------------
-
-data['returns'] = data['Close'].pct_change().fillna(0)
-data['sigma'] = data['returns'].rolling(5).std().fillna(0)
-
-price_delta = data['Close'].diff().abs().fillna(0)
-sigma_safe = data['sigma'] + 1e-8
-
-data['z'] = 1 - (price_delta / (sigma_safe + 1))
-data['z'] = data['z'].clip(0.01, 0.99)
-
-# Entropy Integral
-entropy = []
-e = 0
-for s in data['sigma']:
-    e = e * decay_factor + s
-    entropy.append(e)
-
-data['entropyIntegral'] = entropy
+data = load_and_process(ticker, start_date, end_date)
 
 # -------------------------------------------------
-# PORTFOLIO SIMULATION FUNCTION
+# 3. BACKTEST ENGINE
 # -------------------------------------------------
-
-def run_backtest(df):
-
+def backtest(df, initial_capital=100000):
     cash = initial_capital
     shares = 0
     peak = initial_capital
-
+    
     equity_curve = []
     hedge_ratios = []
-    drawdowns = []
-
+    
     for i in range(len(df)):
-
         price = df['Close'].iloc[i]
-        sigma = df['sigma'].iloc[i]
         z = df['z'].iloc[i]
-        eInt = df['entropyIntegral'].iloc[i]
-
-        total_equity = cash + shares * price
-        peak = max(peak, total_equity)
-        drawdown = (peak - total_equity) / peak
-
-        defensive = False
-        if eInt > entropy_trigger and z > z_trigger:
-            defensive = True
-        if drawdown > drawdown_limit:
-            defensive = True
-
+        e_int = df['e_int'].iloc[i]
+        
+        current_val = cash + (shares * price)
+        peak = max(peak, current_val)
+        drawdown = (peak - current_val) / peak
+        
+        # SLED Logic
+        is_trap = (z > z_limit and e_int > e_limit)
+        is_breach = (drawdown > dd_limit)
+        
         hedge_ratio = 0
-        if defensive:
-            hedge_ratio = min(1, eInt * 10)
+        if is_breach: hedge_ratio = 1.0
+        elif is_trap: hedge_ratio = min(1.0, (e_int / e_limit) - 0.5)
 
-        target_cash = total_equity * hedge_ratio
-
-        if hedge_ratio > 0:
-            if cash < target_cash:
-                need_sell = (target_cash - cash) / price
-                sell = min(shares, need_sell)
-                shares -= sell
-                cash += sell * price
-        else:
-            if cash > 0:
-                shares += cash / price
-                cash = 0
-
-        total_equity = cash + shares * price
-
-        equity_curve.append(total_equity)
+        # Execution
+        target_cash = current_val * max(0, hedge_ratio)
+        if target_cash > cash:
+            to_sell = (target_cash - cash) / price
+            sold = min(shares, to_sell)
+            shares -= sold
+            cash += sold * price
+        elif target_cash < cash and not is_trap and not is_breach:
+            # Re-entry: Only when clear of traps
+            shares += cash / price
+            cash = 0
+            
+        equity_curve.append(cash + shares * price)
         hedge_ratios.append(hedge_ratio)
-        drawdowns.append(drawdown)
-
-    df = df.copy()
+        
     df['equity'] = equity_curve
     df['hedge_ratio'] = hedge_ratios
-    df['drawdown'] = drawdowns
-    df['exposure'] = 1 - df['hedge_ratio']
-
+    df['drawdown'] = (df['equity'].cummax() - df['equity']) / df['equity'].cummax()
     return df
 
-# -------------------------------------------------
-# WALK-FORWARD SPLIT
-# -------------------------------------------------
+# Split Logic
+split_idx = int(len(data) * oos_split)
+is_df = data.iloc[:split_idx].copy()
+oos_df = data.iloc[split_idx:].copy()
 
-split_index = int(len(data) * 0.7)
-
-train = data.iloc[:split_index]
-test = data.iloc[split_index:]
-
-train_bt = run_backtest(train)
-test_bt = run_backtest(test)
-
-full_bt = run_backtest(data)
+is_results = backtest(is_df)
+oos_results = backtest(oos_df, initial_capital=is_results['equity'].iloc[-1])
+full_results = pd.concat([is_results, oos_results])
 
 # -------------------------------------------------
-# BUY & HOLD
+# 4. METRICS & VISUALS
 # -------------------------------------------------
-
-bh_shares = initial_capital / data['Close'].iloc[0]
-data['buy_hold_equity'] = bh_shares * data['Close']
-
-# -------------------------------------------------
-# METRICS FUNCTION
-# -------------------------------------------------
-
-def calculate_metrics(df):
-
+def get_metrics(df):
     years = (df.index[-1] - df.index[0]).days / 365.25
-    final_equity = df['equity'].iloc[-1]
+    cagr = (df['equity'].iloc[-1] / df['equity'].iloc[0])**(1/years) - 1
+    mdd = df['drawdown'].max()
+    ret = df['equity'].pct_change().dropna()
+    sharpe = (ret.mean() * 252) / (ret.std() * np.sqrt(252)) if ret.std() > 0 else 0
+    return cagr, mdd, sharpe
 
-    cagr = (final_equity / initial_capital) ** (1 / years) - 1
+# Performance Display
+c1, c2, c3 = st.columns(3)
+with c1:
+    st.subheader("Full Sample")
+    c, m, s = get_metrics(full_results)
+    st.metric("Final Equity", f"${full_results['equity'].iloc[-1]:,.0f}")
+    st.metric("CAGR", f"{c*100:.2f}%")
+    st.metric("Max DD", f"{m*100:.2f}%")
 
-    returns = df['equity'].pct_change().dropna()
-    vol = returns.std() * np.sqrt(252)
-    sharpe = (returns.mean() * 252) / vol if vol > 0 else 0
+with c2:
+    st.subheader("In-Sample (Train)")
+    c, m, s = get_metrics(is_results)
+    st.write(f"CAGR: {c*100:.2f}%")
+    st.write(f"Sharpe: {s:.2f}")
 
-    max_dd = df['drawdown'].max()
+with c3:
+    st.subheader("Out-of-Sample (Test)")
+    c, m, s = get_metrics(oos_results)
+    st.write(f"CAGR: {c*100:.2f}%")
+    st.write(f"Sharpe: {s:.2f}")
 
-    return final_equity, cagr, sharpe, max_dd
-
-# Calculate metrics
-train_metrics = calculate_metrics(train_bt)
-test_metrics = calculate_metrics(test_bt)
-full_metrics = calculate_metrics(full_bt)
-
-bh_years = (data.index[-1] - data.index[0]).days / 365.25
-bh_final = data['buy_hold_equity'].iloc[-1]
-bh_cagr = (bh_final / initial_capital) ** (1 / bh_years) - 1
-
-# -------------------------------------------------
-# DASHBOARD OUTPUT
-# -------------------------------------------------
-
-st.header("Full Sample Performance")
-
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Final Equity", f"${full_metrics[0]:,.0f}")
-c2.metric("CAGR", f"{full_metrics[1]*100:.2f}%")
-c3.metric("Sharpe", f"{full_metrics[2]:.2f}")
-c4.metric("Max Drawdown", f"{full_metrics[3]*100:.2f}%")
-
-st.metric("Buy & Hold CAGR", f"{bh_cagr*100:.2f}%")
-
-st.header("Walk-Forward Validation")
-
-wf1, wf2 = st.columns(2)
-
-wf1.subheader("In-Sample (70%)")
-wf1.metric("CAGR", f"{train_metrics[1]*100:.2f}%")
-wf1.metric("Sharpe", f"{train_metrics[2]:.2f}")
-wf1.metric("Max DD", f"{train_metrics[3]*100:.2f}%")
-
-wf2.subheader("Out-of-Sample (30%)")
-wf2.metric("CAGR", f"{test_metrics[1]*100:.2f}%")
-wf2.metric("Sharpe", f"{test_metrics[2]:.2f}")
-wf2.metric("Max DD", f"{test_metrics[3]*100:.2f}%")
-
-# -------------------------------------------------
-# CHARTS
-# -------------------------------------------------
-
+# Charts
 st.subheader("Equity Curve vs Buy & Hold")
-st.line_chart(pd.concat([full_bt['equity'], data['buy_hold_equity']], axis=1))
+bh_equity = (full_results['Close'] / full_results['Close'].iloc[0]) * 100000
+fig = go.Figure()
+fig.add_trace(go.Scatter(x=full_results.index, y=full_results['equity'], name='SLED Engine', line=dict(color='#10b981')))
+fig.add_trace(go.Scatter(x=full_results.index, y=bh_equity, name='Buy & Hold', line=dict(color='#475569', dash='dot')))
+fig.add_vline(x=data.index[split_idx], line_dash="dash", line_color="white", annotation_text="OOS Split")
+fig.update_layout(template="plotly_dark", height=500)
+st.plotly_chart(fig, use_container_width=True)
 
-st.subheader("Hedge Ratio")
-st.line_chart(full_bt[['hedge_ratio']])
+st.subheader("Hedge Exposure (0 = Fully Invested, 1 = Cash)")
+st.area_chart(full_results['hedge_ratio'])
 
-st.subheader("Exposure")
-st.line_chart(full_bt[['exposure']])
-
-st.subheader("Entropy Integral")
-st.line_chart(full_bt[['entropyIntegral']])
