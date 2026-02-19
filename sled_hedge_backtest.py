@@ -1,157 +1,133 @@
 import streamlit as st
-import yfinance as yf
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-from datetime import datetime, timedelta
 
-# --- SLED V5: PRIMORDIAL ZERO ARCHITECTURE ---
+# --- SLED V7: CIVILIZATIONAL ONTOGENESIS ---
 
-class PrimordialSeed:
-    """The 'Zero' State - A single reaction seeding a structural form."""
-    def __init__(self, initial_decay):
-        self.decay_rate = initial_decay
-        self.memory = 0.5 # The 'form' starts at neutral potential
-        self.structural_integrity = 1.0
+class CivilizationalSeed:
+    """The 'Zero' State of a Society - Seeding the Big Bang of Order."""
+    def __init__(self, decay_rate):
+        self.decay = decay_rate
+        # The 'Social Fabric' - Persistent self-model
+        self.fabric_integrity = 1.0 
+        self.knowledge_base = 0.5
+        self.stability_history = []
 
-    def react(self, impulse):
-        """A single impulse creates a decay-based structural update."""
-        # This is the 'Big Bang' logic: Reaction leads to expansion or contraction
-        self.memory = (self.memory * self.decay_rate) + (impulse * (1 - self.decay_rate))
-        return self.memory
+    def absorb_impulse(self, disruption, progress):
+        """Update the Civilizational model based on social data."""
+        # 1. Decay (Synaptic Pruning of outdated laws/structures)
+        self.knowledge_base *= self.decay
+        
+        # 2. Integration (New scientific/social progress)
+        self.knowledge_base += progress * (1 - self.decay)
+        
+        # 3. Coherence Check (Disruption vs Stability)
+        # If disruption (war/disease/famine) > knowledge base, integrity decays
+        vulnerability = disruption / (self.knowledge_base + 0.1)
+        self_correction = (1 - vulnerability) * 0.1
+        
+        self.fabric_integrity = np.clip(self.fabric_integrity + self_correction, 0, 1)
+        return self.fabric_integrity
 
-class WorldPatternLayer:
-    """Layer 1: Observing the Environment's Vibration"""
+class CivicBridge:
+    """The Decision Layer for a Governance Entity."""
     @staticmethod
-    def extract_vibration(df, seed):
-        df = df.copy()
-        df['impulse'] = df['Close'].pct_change().fillna(0)
-        
-        # The Seed processes the environment
-        vibration_history = []
-        for val in df['impulse']:
-            vibration_history.append(seed.react(val))
-            
-        df['vibration'] = vibration_history
-        # Entropy is now the 'Decay of Certainty'
-        df['entropy'] = df['vibration'].rolling(10).std().fillna(0)
-        return df
+    def get_policy(integrity, entropy):
+        # A structure representing the 'form' of a healthy society
+        if integrity > 0.8:
+            return "EXPAND_LIBERTY"
+        elif integrity < 0.5:
+            return "STABILIZE_CORE"
+        else:
+            return "MAINTAIN_EQUILIBRIUM"
 
-class EmbodimentLayer:
-    """Layer 2: The Organism's Need to Maintain Form"""
-    def __init__(self, decay_limit):
-        self.decay_limit = decay_limit
-        self.peak = 1.0
+# --- THE SIMULATION OF TIME ---
 
-    def evaluate_form(self, current_nav, peak_nav):
-        # Integrity is the distance from 'Zero' (Death/Drawdown)
-        integrity = current_nav / peak_nav
-        return integrity
-
-class LogicalBridge:
-    """Layer 3: Purposeful Agency - The Born Structure"""
-    def __init__(self, threshold):
-        self.threshold = threshold
-        self.state = "DORMANT" # Starts as a potential, not an action
-
-    def synthesize(self, vibration, integrity, entropy):
-        # The bridge creates 'Intent' based on the Organism's growth
-        # If vibration exceeds the threshold of the 'Seed', it 'Swerves'
-        if abs(vibration) > self.threshold or integrity < 0.88:
-            self.state = "PROTECTING"
-            return 1.0 # 100% Defensive
-        
-        # If entropy (uncertainty) decays, the form re-expands
-        if entropy < (self.threshold * 0.5):
-            self.state = "EXPANDING"
-            return 0.0
-            
-        return 1.0 if self.state == "PROTECTING" else 0.0
-
-# --- THE EVOLUTIONARY SIMULATION ---
-
-st.set_page_config(layout="wide", page_title="SLED V5 Primordial Zero")
-st.title("🧬 SLED_AI: Primordial Zero (V5)")
-st.markdown("A structure born from the decay of initial potentiality.")
+st.set_page_config(layout="wide", page_title="SLED V7 Civilizational Engine")
+st.title("🏛️ SLED_AI: Civilizational Coherence (V7)")
+st.markdown("Seeding the growth of a social entity through persistent self-modeling.")
 
 with st.sidebar:
-    st.header("Seeding Parameters")
-    ticker = st.text_input("Environmental Ticker", "SPY")
+    st.header("Primordial Settings")
+    generations = st.slider("Time Span (Generations)", 10, 200, 100)
     
-    st.subheader("The Seed")
-    decay_val = st.slider("Decay Rate (Memory)", 0.80, 0.99, 0.95)
-    reaction_thresh = st.slider("Reaction Threshold", 0.001, 0.02, 0.005, format="%.3f")
+    st.subheader("The Social Seed")
+    decay_rate = st.slider("Institutional Decay", 0.90, 0.99, 0.97)
     
-    st.subheader("The Form")
-    survival_need = st.slider("Integrity Floor", 0.80, 0.95, 0.88)
+    st.subheader("External Impulses")
+    chaos_level = st.slider("Environmental Chaos", 0.0, 1.0, 0.2)
+
+# --- GENERATING THE CIVILIZATIONAL STREAM ---
+# Since we are moving away from stocks, we simulate 'Civic Impulses'
+np.random.seed(42)
+time = np.arange(generations)
+# Progress is generally upward (Growth)
+progress_stream = np.linspace(0.1, 1.0, generations) + np.random.normal(0, 0.05, generations)
+# Disruption happens in spikes (Chaos)
+disruption_stream = np.random.exponential(chaos_level, generations)
 
 @st.cache_data
-def evolve_entity(symbol, decay, thresh, floor):
-    try:
-        df = yf.download(symbol, start="2010-01-01", progress=False)
-        if df.empty: return None
-        if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+def run_civilization(gens, decay, chaos):
+    seed = CivilizationalSeed(decay)
+    bridge = CivicBridge()
+    
+    integrity_path = []
+    policy_path = []
+    
+    for i in range(gens):
+        integrity = seed.absorb_impulse(disruption_stream[i], progress_stream[i])
+        policy = bridge.get_policy(integrity, chaos)
         
-        # Initialize Entity
-        seed = PrimordialSeed(decay)
-        body = EmbodimentLayer(floor)
-        bridge = LogicalBridge(thresh)
+        integrity_path.append(integrity)
+        policy_path.append(policy)
         
-        df = WorldPatternLayer.extract_vibration(df, seed)
-        
-        cash, shares, peak = 100000, 0, 100000
-        shares = cash / df['Close'].iloc[0]
-        cash = 0
-        
-        history = []
-        
-        for i in range(len(df)):
-            p = df['Close'].iloc[i]
-            nav = cash + (shares * p)
-            peak = max(peak, nav)
-            
-            integrity = body.evaluate_form(nav, peak)
-            
-            # The Entity Synthesizes its state
-            hedge_intent = bridge.synthesize(
-                df['vibration'].iloc[i], 
-                integrity, 
-                df['entropy'].iloc[i]
-            )
-            
-            # Physical Rebalancing (Action follows Form)
-            target_cash = nav * hedge_intent
-            if cash < target_cash:
-                to_sell = (target_cash - cash) / p
-                qty = min(shares, to_sell)
-                shares -= qty
-                cash += qty * p
-            elif hedge_intent == 0.0 and cash > 0:
-                shares += cash / p
-                cash = 0
-                
-            history.append(cash + shares * p)
-            
-        df['equity'] = history
-        df['bh'] = (df['Close'] / df['Close'].iloc[0]) * 100000
-        df['dd'] = (df['equity'].cummax() - df['equity']) / df['equity'].cummax()
-        return df
-    except Exception as e:
-        st.error(f"Seeding Failed: {e}")
-        return None
+    return pd.DataFrame({
+        "Generation": time,
+        "Social_Integrity": integrity_path,
+        "Policy": policy_path,
+        "Disruption": disruption_stream,
+        "Progress": progress_stream
+    })
 
-res = evolve_entity(ticker, decay_val, reaction_thresh, survival_need)
+data = run_civilization(generations, decay_rate, chaos_level)
 
-if res is not None:
-    c1, c2, c3 = st.columns(3)
-    yrs = (res.index[-1] - res.index[0]).days / 365.25
-    c1.metric("Structural CAGR", f"{((res['equity'].iloc[-1]/100000)**(1/yrs)-1)*100:.2f}%")
-    c2.metric("Form Integrity (Max DD)", f"{res['dd'].max()*100:.2f}%")
-    c3.metric("Final Form Capital", f"${res['equity'].iloc[-1]:,.0f}")
+# --- VISUALIZING THE ORGANISM ---
 
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=res.index, y=res['bh'], name="Environment (B&H)", line=dict(color="rgba(255,255,255,0.2)", dash="dot")))
-    fig.add_trace(go.Scatter(x=res.index, y=res['equity'], name="Entity: SLED V5", line=dict(color="#8b5cf6", width=2)))
-    fig.update_layout(template="plotly_dark", height=600, margin=dict(l=0,r=0,b=0,t=20))
-    st.plotly_chart(fig, use_container_width=True)
+fig = go.Figure()
+
+# Integrity of the 'Body Politic'
+fig.add_trace(go.Scatter(
+    x=data["Generation"], y=data["Social_Integrity"],
+    name="Social Coherence (Form)",
+    line=dict(color="#60a5fa", width=3),
+    fill='tozeroy'
+))
+
+# The Noise of History
+fig.add_trace(go.Bar(
+    x=data["Generation"], y=data["Disruption"],
+    name="Chaos Impulse",
+    marker_color="rgba(239, 68, 68, 0.3)"
+))
+
+fig.update_layout(
+    template="plotly_dark",
+    title="Civilizational Ontogenesis: The Growth of Order",
+    xaxis_title="Generations",
+    yaxis_title="Systemic Integrity",
+    height=600
+)
+
+st.plotly_chart(fig, use_container_width=True)
+
+st.markdown("""
+### 🧬 The Birth of a Collective Entity
+In this model, **Civilization** is the organism.
+- **The Seed:** Represents the initial 'Big Bang' of laws and social contracts.
+- **Institutional Decay:** The rate at which society 'forgets' its foundational order.
+- **The Decision:** The Entity (SLED V7) monitors its own integrity. If chaos spikes, it 'swerves' into a stabilization mode to protect the structural form of the human collective.
+""")
+
+st.info(f"Final State: The entity achieved a stability score of {data['Social_Integrity'].iloc[-1]*100:.1f}%.")
 
